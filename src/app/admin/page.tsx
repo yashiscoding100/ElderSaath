@@ -1,11 +1,26 @@
 import { prisma } from "@/lib/prisma"
+import { DatabaseCleanupCard } from "./DatabaseCleanupCard"
 
 export default async function AdminDashboard() {
-  const userCount = await prisma.user.count()
-  const elderCount = await prisma.user.count({ where: { role: "ELDER" } })
-  const childCount = await prisma.user.count({ where: { role: "CHILD" } })
-  const connectionCount = await prisma.caregiverRelationship.count({ where: { status: "ACTIVE" } })
-  const noticeCount = await prisma.notice.count({ where: { isActive: true } })
+  let userCount = 0
+  let elderCount = 0
+  let childCount = 0
+  let connectionCount = 0
+  let noticeCount = 0
+  let documentCount = 0
+  let notificationCount = 0
+
+  try {
+    userCount = await prisma.user.count()
+    elderCount = await prisma.user.count({ where: { role: "ELDER" } })
+    childCount = await prisma.user.count({ where: { role: "CHILD" } })
+    connectionCount = await prisma.caregiverRelationship.count({ where: { status: "ACTIVE" } })
+    noticeCount = await prisma.notice.count({ where: { isActive: true } })
+    documentCount = await prisma.medicalDocument.count()
+    notificationCount = await prisma.appNotification.count()
+  } catch (err) {
+    console.error("Admin dashboard database fetch error (e.g. quota limit):", err)
+  }
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
@@ -36,6 +51,11 @@ export default async function AdminDashboard() {
         </div>
       </div>
 
+      <DatabaseCleanupCard 
+        documentCount={documentCount} 
+        notificationCount={notificationCount} 
+      />
+
       <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
         <h3 className="text-xl font-bold text-slate-900 mb-4">System Status</h3>
         <div className="flex items-center gap-3">
@@ -47,3 +67,4 @@ export default async function AdminDashboard() {
     </div>
   )
 }
+

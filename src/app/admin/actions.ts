@@ -73,3 +73,63 @@ export async function createFamilyNetwork(elderIds: string[], childIds: string[]
   }
   return { success: true, message: `Successfully linked ${count} connections to form the family network!` }
 }
+
+export async function purgeAllMedicalDocuments() {
+  const session = await auth()
+  if (session?.user?.role !== "ADMIN") {
+    return { success: false, message: "Unauthorized" }
+  }
+
+  try {
+    const docs = await prisma.medicalDocument.findMany({
+      select: { fileUrl: true }
+    })
+
+    const { deleteDocument } = await import("@/lib/storage")
+    for (const doc of docs) {
+      if (doc.fileUrl && doc.fileUrl.startsWith("http")) {
+        await deleteDocument(doc.fileUrl).catch(() => {})
+      }
+    }
+
+    const result = await prisma.medicalDocument.deleteMany({})
+
+    const { revalidatePath } = await import("next/navigation")
+    revalidatePath("/admin")
+    revalidatePath("/elder/documents")
+    revalidatePath("/child/documents")
+
+    return { 
+      success: true, 
+      message: `Successfully deleted ${result.count} medical documents and freed database storage.` 
+    }
+  } catch (error: any) {
+    return { success: false, message: error.message || "Failed to purge documents" }
+  }
+}
+
+export async function purgeDatabaseLogs() {
+  const session = await auth()
+  if (session?.user?.role !== "ADMIN") {
+    return { success: false, message: "Unauthorized" }
+  }
+
+  try {
+    const deletedNotifications = await prisma.appNotification.deleteMany({})
+    const deletedMedLogs = await prisma.medicationLog.deleteMany({})
+    const deletedTaskLogs = await prisma.taskLog.deleteMany({})
+
+    const total = deletedNotifications.count + deletedMedLogs.count + deletedTaskLogs.count
+
+    const { revalidatePath } = await import("next/navigation")
+    revalidatePath("/admin")
+
+    return {
+      success: true,
+      message: `Cleared ${total} historical logs (${deletedNotifications.count} notifications, ${deletedMedLogs.count} medication logs, ${deletedTaskLogs.count} task logs).`
+    }
+  } catch (error: any) {
+    return { success: false, message: error.message || "Failed to purge logs" }
+  }
+}
+
