@@ -3,7 +3,12 @@ import { prisma } from "@/lib/prisma"
 export async function GlobalNotice() {
   try {
     const activeNotices = await prisma.notice.findMany({
-      where: { isActive: true },
+      where: { 
+        isActive: true,
+        NOT: {
+          title: { startsWith: "__SYSTEM_" }
+        }
+      },
       orderBy: { createdAt: "desc" }
     })
 

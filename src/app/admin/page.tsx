@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma"
 import { DatabaseCleanupCard } from "./DatabaseCleanupCard"
+import { AdminDemoToggleCard } from "./AdminDemoToggleCard"
+import { isDemoEnabled, ensureDemoAccountsExist } from "@/lib/demoConfig"
 
 export default async function AdminDashboard() {
   let userCount = 0
@@ -9,13 +11,23 @@ export default async function AdminDashboard() {
   let noticeCount = 0
   let documentCount = 0
   let notificationCount = 0
+  let demoEnabled = true
 
   try {
+    // Ensure demo accounts exist and are linked
+    await ensureDemoAccountsExist()
+    demoEnabled = await isDemoEnabled()
+
     userCount = await prisma.user.count()
     elderCount = await prisma.user.count({ where: { role: "ELDER" } })
     childCount = await prisma.user.count({ where: { role: "CHILD" } })
     connectionCount = await prisma.caregiverRelationship.count({ where: { status: "ACTIVE" } })
-    noticeCount = await prisma.notice.count({ where: { isActive: true } })
+    noticeCount = await prisma.notice.count({ 
+      where: { 
+        isActive: true,
+        NOT: { title: { startsWith: "__SYSTEM_" } }
+      } 
+    })
     documentCount = await prisma.medicalDocument.count()
     notificationCount = await prisma.appNotification.count()
   } catch (err) {
@@ -50,6 +62,8 @@ export default async function AdminDashboard() {
           <p className="text-4xl font-black text-purple-600">{connectionCount}</p>
         </div>
       </div>
+
+      <AdminDemoToggleCard initialEnabled={demoEnabled} />
 
       <DatabaseCleanupCard 
         documentCount={documentCount} 

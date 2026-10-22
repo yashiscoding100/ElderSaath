@@ -15,6 +15,19 @@ export default function LoginPage() {
   const [googleError, setGoogleError] = useState("")
   const [loading, setLoading] = useState(false)
   const [autoLoggingIn, setAutoLoggingIn] = useState(true)
+  const [demoActive, setDemoActive] = useState(true)
+
+  // Fetch whether demo mode is enabled by Admin
+  useEffect(() => {
+    fetch("/api/demo/status")
+      .then((res) => res.json())
+      .then((data) => {
+        if (typeof data.enabled === "boolean") {
+          setDemoActive(data.enabled)
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   // Auto-login logic for Capacitor persistent sessions
   useEffect(() => {
@@ -108,7 +121,7 @@ export default function LoginPage() {
             <span className="text-2xl font-black tracking-tight">ElderSaath</span>
           </div>
           <h1 className="text-4xl md:text-5xl font-black tracking-tight leading-tight mb-6">
-            Because distance shouldn't mean less care.
+            Because distance shouldn&apos;t mean less care.
           </h1>
           <p className="text-lg text-blue-100 font-medium leading-relaxed">
             Stay instantly connected to your elderly loved ones. Monitor health vitals, manage medications, and coordinate a secure care network—all in one place.
@@ -132,6 +145,39 @@ export default function LoginPage() {
             <h2 className="text-3xl font-black text-slate-900 tracking-tight">Welcome back</h2>
             <p className="text-slate-500 mt-2 font-medium text-sm">Please enter your details to sign in.</p>
           </div>
+
+          {/* RECRUITER / EVALUATOR DEMO BUTTON */}
+          {demoActive && (
+            <div className="mb-6">
+              <Link
+                href="/demo"
+                className="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:via-indigo-700 hover:to-purple-700 text-white p-4 rounded-2xl font-black text-sm transition-all shadow-lg shadow-indigo-600/25 flex items-center justify-between group active:scale-[0.98]"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl p-2 bg-white/20 rounded-xl">🚀</span>
+                  <div className="text-left">
+                    <div className="font-extrabold text-sm tracking-wide flex items-center gap-2">
+                      <span>Explore Live Demo</span>
+                      <span className="text-[10px] bg-white/30 text-white uppercase px-2 py-0.5 rounded-full font-bold">
+                        Recruiter View
+                      </span>
+                    </div>
+                    <div className="text-xs font-medium text-blue-100 mt-0.5">
+                      Preview Parent or Child interface instantly without password
+                    </div>
+                  </div>
+                </div>
+                <span className="text-xl font-bold group-hover:translate-x-1 transition-transform ml-2">→</span>
+              </Link>
+
+              <div className="mt-6 relative flex items-center justify-center">
+                <hr className="w-full border-slate-200" />
+                <span className="absolute px-3 bg-white text-slate-400 font-bold text-xs uppercase tracking-wider">
+                  Or sign in with email
+                </span>
+              </div>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-5">
             {error && (
@@ -204,7 +250,7 @@ export default function LoginPage() {
           )}
 
           <p className="text-center mt-8 text-slate-600 text-sm font-medium">
-            Don't have an account?{" "}
+            Don&apos;t have an account?{" "}
             <Link href="/register" className="text-blue-600 hover:text-blue-700 hover:underline font-bold transition">
               Create one for free
             </Link>

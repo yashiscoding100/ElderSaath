@@ -4,6 +4,11 @@ import { NoticeList } from "./NoticeList"
 
 export default async function AdminNoticesPage() {
   const notices = await prisma.notice.findMany({
+    where: {
+      NOT: {
+        title: { startsWith: "__SYSTEM_" }
+      }
+    },
     orderBy: { createdAt: "desc" }
   })
 
