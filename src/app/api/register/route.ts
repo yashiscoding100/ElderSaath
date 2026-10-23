@@ -50,12 +50,13 @@ export async function POST(req: Request) {
       { message: "User registered successfully" },
       { status: 201 }
     )
-  } catch (error) {
+  } catch (error: any) {
+    console.error("Registration error:", error)
     if (error instanceof z.ZodError) {
       return NextResponse.json({ message: error.errors[0].message }, { status: 400 })
     }
     return NextResponse.json(
-      { message: "Internal server error" },
+      { message: error?.message || "Internal server error" },
       { status: 500 }
     )
   }
