@@ -31,6 +31,14 @@ export default function LoginPage() {
 
   // Auto-login logic for Capacitor persistent sessions
   useEffect(() => {
+    // Only attempt auto-login if URL doesn't have ?fresh=true or ?logout=true
+    if (typeof window !== "undefined" && window.location.search.includes("fresh=true")) {
+      localStorage.removeItem("es_persistent_email")
+      localStorage.removeItem("es_persistent_password")
+      setAutoLoggingIn(false)
+      return
+    }
+
     const savedEmail = localStorage.getItem("es_persistent_email")
     const savedPassword = localStorage.getItem("es_persistent_password")
     
@@ -45,13 +53,15 @@ export default function LoginPage() {
           router.push("/dashboard")
           router.refresh()
         } else {
-          // If credentials became invalid, clear them
+          // If credentials became invalid (e.g. database migration or wiped account), clear them
           localStorage.removeItem("es_persistent_email")
           localStorage.removeItem("es_persistent_password")
           setAutoLoggingIn(false)
           setLoading(false)
         }
       }).catch(() => {
+        localStorage.removeItem("es_persistent_email")
+        localStorage.removeItem("es_persistent_password")
         setAutoLoggingIn(false)
         setLoading(false)
       })
