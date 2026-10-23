@@ -3,7 +3,7 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { deleteDocument } from "@/lib/storage"
-import { revalidatePath } from "next/navigation"
+import { revalidatePath } from "next/cache"
 
 export async function clearAllElderDocuments() {
   const session = await auth()

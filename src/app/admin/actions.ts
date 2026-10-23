@@ -94,7 +94,7 @@ export async function purgeAllMedicalDocuments() {
 
     const result = await prisma.medicalDocument.deleteMany({})
 
-    const { revalidatePath } = await import("next/navigation")
+    const { revalidatePath } = await import("next/cache")
     revalidatePath("/admin")
     revalidatePath("/elder/documents")
     revalidatePath("/child/documents")
@@ -121,7 +121,7 @@ export async function purgeDatabaseLogs() {
 
     const total = deletedNotifications.count + deletedMedLogs.count + deletedTaskLogs.count
 
-    const { revalidatePath } = await import("next/navigation")
+    const { revalidatePath } = await import("next/cache")
     revalidatePath("/admin")
 
     return {

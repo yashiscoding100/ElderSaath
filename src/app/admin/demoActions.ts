@@ -2,7 +2,7 @@
 
 import { auth } from "@/auth"
 import { setDemoEnabled, isDemoEnabled, ensureDemoAccountsExist } from "@/lib/demoConfig"
-import { revalidatePath } from "next/navigation"
+import { revalidatePath } from "next/cache"
 
 export async function toggleDemoMode(enabled: boolean) {
   const session = await auth()
