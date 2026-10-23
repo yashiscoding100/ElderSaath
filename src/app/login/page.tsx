@@ -146,36 +146,21 @@ export default function LoginPage() {
             <p className="text-slate-500 mt-2 font-medium text-sm">Please enter your details to sign in.</p>
           </div>
 
-          {/* RECRUITER / EVALUATOR DEMO BUTTON */}
+          {/* RECRUITER / EVALUATOR DEMO LINK */}
           {demoActive && (
             <div className="mb-6">
               <Link
                 href="/demo"
-                className="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:via-indigo-700 hover:to-purple-700 text-white p-4 rounded-2xl font-black text-sm transition-all shadow-lg shadow-indigo-600/25 flex items-center justify-between group active:scale-[0.98]"
+                className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-800 px-4 py-3 rounded-xl text-sm font-semibold transition-colors flex items-center justify-between group"
               >
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl p-2 bg-white/20 rounded-xl">🚀</span>
-                  <div className="text-left">
-                    <div className="font-extrabold text-sm tracking-wide flex items-center gap-2">
-                      <span>Explore Live Demo</span>
-                      <span className="text-[10px] bg-white/30 text-white uppercase px-2 py-0.5 rounded-full font-bold">
-                        Recruiter View
-                      </span>
-                    </div>
-                    <div className="text-xs font-medium text-blue-100 mt-0.5">
-                      Preview Parent or Child interface instantly without password
-                    </div>
-                  </div>
+                <div className="flex items-center gap-2.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  <span className="text-slate-900 font-bold">Viewing as an Evaluator or Recruiter?</span>
                 </div>
-                <span className="text-xl font-bold group-hover:translate-x-1 transition-transform ml-2">→</span>
-              </Link>
-
-              <div className="mt-6 relative flex items-center justify-center">
-                <hr className="w-full border-slate-200" />
-                <span className="absolute px-3 bg-white text-slate-400 font-bold text-xs uppercase tracking-wider">
-                  Or sign in with email
+                <span className="text-xs font-bold text-blue-600 group-hover:translate-x-0.5 transition-transform flex items-center gap-1">
+                  Launch Demo <span aria-hidden="true">&rarr;</span>
                 </span>
-              </div>
+              </Link>
             </div>
           )}
 
