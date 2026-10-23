@@ -1,15 +1,22 @@
+export const dynamic = 'force-dynamic'
+
 import { prisma } from "@/lib/prisma"
 import { LinkRow } from "./LinkRow"
 import { CreateLinkModal } from "./CreateLinkModal"
 
 export default async function AdminLinksPage() {
-  const links = await prisma.caregiverRelationship.findMany({
-    include: {
-      elder: { select: { name: true, email: true } },
-      child: { select: { name: true, email: true } }
-    },
-    orderBy: { createdAt: "desc" }
-  })
+  let links: any[] = []
+  try {
+    links = await prisma.caregiverRelationship.findMany({
+      include: {
+        elder: { select: { name: true, email: true } },
+        child: { select: { name: true, email: true } }
+      },
+      orderBy: { createdAt: "desc" }
+    })
+  } catch (error) {
+    console.error("AdminLinksPage error:", error)
+  }
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
