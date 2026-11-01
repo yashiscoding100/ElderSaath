@@ -4,6 +4,8 @@ export const STARTUP_POPUP_NOTICE_TITLE = "__SYSTEM_STARTUP_POPUP__"
 
 export type StartupPopupType = "TEXT" | "IMAGE" | "VIDEO"
 
+export type DismissMode = "IMMEDIATE" | "TIMER_REQUIRED" | "FULL_VIDEO_REQUIRED"
+
 export interface StartupPopupConfig {
   enabled: boolean
   type: StartupPopupType
@@ -12,6 +14,13 @@ export interface StartupPopupConfig {
   mediaUrl: string
   buttonText: string
   buttonLink: string
+
+  // Dismissal & Close Button Power Controls
+  showCloseButton: boolean
+  dismissMode: DismissMode
+  lockDurationSeconds: number
+  autoCloseOnComplete: boolean
+
   updatedAt?: string
 }
 
@@ -22,7 +31,12 @@ export const DEFAULT_STARTUP_POPUP: StartupPopupConfig = {
   message: "We are committed to providing the highest quality care and peace of mind for your loved ones.",
   mediaUrl: "",
   buttonText: "Continue to App",
-  buttonLink: ""
+  buttonLink: "",
+
+  showCloseButton: true,
+  dismissMode: "IMMEDIATE",
+  lockDurationSeconds: 10,
+  autoCloseOnComplete: false
 }
 
 export async function getStartupPopupConfig(): Promise<StartupPopupConfig> {
@@ -45,6 +59,12 @@ export async function getStartupPopupConfig(): Promise<StartupPopupConfig> {
         mediaUrl: parsed.mediaUrl || "",
         buttonText: parsed.buttonText || "Continue to App",
         buttonLink: parsed.buttonLink || "",
+
+        showCloseButton: parsed.showCloseButton !== undefined ? parsed.showCloseButton : true,
+        dismissMode: parsed.dismissMode || "IMMEDIATE",
+        lockDurationSeconds: typeof parsed.lockDurationSeconds === "number" ? parsed.lockDurationSeconds : 10,
+        autoCloseOnComplete: Boolean(parsed.autoCloseOnComplete),
+
         updatedAt: notice.createdAt.toISOString()
       }
     } catch {
@@ -78,7 +98,11 @@ export async function saveStartupPopupConfig(config: Partial<StartupPopupConfig>
       message: merged.message,
       mediaUrl: merged.mediaUrl,
       buttonText: merged.buttonText,
-      buttonLink: merged.buttonLink
+      buttonLink: merged.buttonLink,
+      showCloseButton: merged.showCloseButton,
+      dismissMode: merged.dismissMode,
+      lockDurationSeconds: merged.lockDurationSeconds,
+      autoCloseOnComplete: merged.autoCloseOnComplete
     })
 
     const newIsActive = typeof config.enabled === "boolean" ? config.enabled : merged.enabled
