@@ -82,14 +82,15 @@ export function ensureFirebaseInit(): boolean {
 
 export async function sendPushNotification(userId: string, payload: Record<string, unknown>) {
   // Force an in-app database notification for the Bell icon
+  const alertTitle = (payload.title as string) || (payload.label as string) || "Notification"
+  const alertBody = (payload.body as string) || ""
+
   try {
-    const title = (payload.title as string) || (payload.label as string) || "Notification"
-    const body = (payload.body as string) || ""
     await prisma.appNotification.create({
       data: {
         userId,
-        title,
-        message: body,
+        title: alertTitle,
+        message: alertBody,
         type: payload.type === "ALARM" || payload.type === "EMERGENCY" ? "ALERT" : "INFO",
         link: (payload.url as string) || null
       }
@@ -107,7 +108,7 @@ export async function sendPushNotification(userId: string, payload: Record<strin
   const isFcmReady = ensureFirebaseInit()
 
   const notifications = subscriptions.map(async sub => {
-    // Check if it's an FCM native token
+    // Check if it's an FCM native token (Android and iOS via Firebase APNs)
     if (sub.endpoint.startsWith("fcm:")) {
       if (!isFcmReady) {
         console.error("FIREBASE INIT FAILED: " + firebaseInitError)
@@ -116,11 +117,12 @@ export async function sendPushNotification(userId: string, payload: Record<strin
       
       const token = sub.endpoint.replace("fcm:", "")
       const isAlarm = payload.type === 'ALARM'
+      
       const message: any = {
         ...(isAlarm ? {} : {
           notification: {
-            title: payload.title as string,
-            body: payload.body as string,
+            title: alertTitle,
+            body: alertBody,
           }
         }),
         data: payload as Record<string, string>,
@@ -133,12 +135,31 @@ export async function sendPushNotification(userId: string, payload: Record<strin
               sound: "default"
             }
           })
+        },
+        // Apple Push Notification Service (iOS)
+        apns: {
+          headers: {
+            "apns-priority": "10",
+            "apns-push-type": "alert"
+          },
+          payload: {
+            aps: {
+              alert: {
+                title: alertTitle,
+                body: alertBody
+              },
+              sound: "default",
+              badge: 1,
+              interruptionLevel: isAlarm ? "time-sensitive" : "active",
+              contentAvailable: true
+            }
+          }
         }
       }
       
       try {
         const response = await getMessaging().send(message)
-        console.log(`[Push] Successfully sent FCM alarm to user ${userId}, messageId: ${response}`)
+        console.log(`[Push] Successfully sent FCM message to user ${userId}, response: ${response}`)
         return response
       } catch (error: any) {
         console.error("Firebase push error:", error)
