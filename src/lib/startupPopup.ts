@@ -60,27 +60,35 @@ export async function getStartupPopupConfig(): Promise<StartupPopupConfig> {
   }
 }
 
-export async function saveStartupPopupConfig(config: StartupPopupConfig): Promise<boolean> {
+export async function saveStartupPopupConfig(config: Partial<StartupPopupConfig>): Promise<boolean> {
   try {
+    const current = await getStartupPopupConfig()
+    const merged: StartupPopupConfig = {
+      ...current,
+      ...config
+    }
+
     const existing = await prisma.notice.findFirst({
       where: { title: STARTUP_POPUP_NOTICE_TITLE }
     })
 
     const contentPayload = JSON.stringify({
-      type: config.type,
-      title: config.title,
-      message: config.message,
-      mediaUrl: config.mediaUrl,
-      buttonText: config.buttonText,
-      buttonLink: config.buttonLink
+      type: merged.type,
+      title: merged.title,
+      message: merged.message,
+      mediaUrl: merged.mediaUrl,
+      buttonText: merged.buttonText,
+      buttonLink: merged.buttonLink
     })
+
+    const newIsActive = typeof config.enabled === "boolean" ? config.enabled : merged.enabled
 
     if (existing) {
       await prisma.notice.update({
         where: { id: existing.id },
         data: {
           content: contentPayload,
-          isActive: config.enabled
+          isActive: newIsActive
         }
       })
     } else {
@@ -88,7 +96,7 @@ export async function saveStartupPopupConfig(config: StartupPopupConfig): Promis
         data: {
           title: STARTUP_POPUP_NOTICE_TITLE,
           content: contentPayload,
-          isActive: config.enabled
+          isActive: newIsActive
         }
       })
     }

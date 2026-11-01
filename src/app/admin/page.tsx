@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma"
 import { DatabaseCleanupCard } from "./DatabaseCleanupCard"
 import { AdminDemoToggleCard } from "./AdminDemoToggleCard"
 import { isDemoEnabled, ensureDemoAccountsExist } from "@/lib/demoConfig"
+import { getStartupPopupConfig } from "@/lib/startupPopup"
+import { AdminStartupPopupCard } from "./AdminStartupPopupCard"
 
 export default async function AdminDashboard() {
   let userCount = 0
@@ -12,6 +14,7 @@ export default async function AdminDashboard() {
   let documentCount = 0
   let notificationCount = 0
   let demoEnabled = true
+  let startupConfig = await getStartupPopupConfig()
 
   try {
     // Ensure demo accounts exist and are linked
@@ -63,6 +66,10 @@ export default async function AdminDashboard() {
         </div>
       </div>
 
+      {/* App Startup Video / Photo / Notice Control Card */}
+      <AdminStartupPopupCard initialConfig={startupConfig} />
+
+      {/* Demo Mode Toggle */}
       <AdminDemoToggleCard initialEnabled={demoEnabled} />
 
       <DatabaseCleanupCard 

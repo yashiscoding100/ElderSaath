@@ -1,15 +1,51 @@
 "use client"
 
 import { useState } from "react"
-import { Film, Image as ImageIcon, FileText, Eye, Check, Sparkles, AlertCircle, PlayCircle } from "lucide-react"
+import { Film, Image as ImageIcon, FileText, Eye, Check, Sparkles, AlertCircle, PlayCircle, Power, Loader2 } from "lucide-react"
 import { StartupPopupConfig, StartupPopupType } from "@/lib/startupPopup"
 
 export function StartupPopupManager({ initialConfig }: { initialConfig: StartupPopupConfig }) {
   const [config, setConfig] = useState<StartupPopupConfig>(initialConfig)
   const [loading, setLoading] = useState(false)
+  const [toggleLoading, setToggleLoading] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const [toggleNotice, setToggleNotice] = useState<string | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
 
+  // Instant 1-Click Power Toggle (persists directly to server)
+  const handleTogglePower = async (forcedState?: boolean) => {
+    const nextState = typeof forcedState === "boolean" ? forcedState : !config.enabled
+    setToggleLoading(true)
+    setToggleNotice(null)
+
+    try {
+      const res = await fetch("/api/admin/startup-popup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: nextState })
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        setConfig(prev => ({ ...prev, enabled: nextState }))
+        setToggleNotice(
+          nextState
+            ? "🟢 Startup Announcement is now ENABLED! It will play/display every time users open the app or website."
+            : "⚪ Startup Announcement is now DISABLED (OFF). App and website open directly without any popups."
+        )
+        setTimeout(() => setToggleNotice(null), 5000)
+      } else {
+        const data = await res.json()
+        alert("Failed to toggle status: " + (data.message || "Unknown error"))
+      }
+    } catch (err: any) {
+      alert("Network error: " + err.message)
+    } finally {
+      setToggleLoading(false)
+    }
+  }
+
+  // Save Content Details (Title, Media URL, Message, Buttons)
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -24,7 +60,7 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
 
       if (res.ok) {
         setSaveSuccess(true)
-        setTimeout(() => setSaveSuccess(false), 3000)
+        setTimeout(() => setSaveSuccess(false), 4000)
       } else {
         const data = await res.json()
         alert("Failed to save: " + (data.message || "Unknown error"))
@@ -38,83 +74,169 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
 
   const loadExample = (type: StartupPopupType) => {
     if (type === "VIDEO") {
-      setConfig({
-        ...config,
+      setConfig(prev => ({
+        ...prev,
         type: "VIDEO",
         title: "How ElderSaath Keeps Loved Ones Safe",
         message: "Watch this short guide on how SOS alerts and smart medication reminders work.",
         mediaUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
         buttonText: "Got It, Continue",
         buttonLink: ""
-      })
+      }))
     } else if (type === "IMAGE") {
-      setConfig({
-        ...config,
+      setConfig(prev => ({
+        ...prev,
         type: "IMAGE",
         title: "Diwali Wishes from ElderSaath!",
         message: "Wishing all our elders and families good health, happiness, and safety this festive season.",
         mediaUrl: "https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=800&auto=format&fit=crop",
         buttonText: "Open App",
         buttonLink: ""
-      })
+      }))
     } else {
-      setConfig({
-        ...config,
+      setConfig(prev => ({
+        ...prev,
         type: "TEXT",
         title: "Important App Update",
         message: "Our servers have moved to Mumbai for ultra-fast performance. If you have any questions, our support team is available 24/7.",
         mediaUrl: "",
         buttonText: "Continue to Dashboard",
         buttonLink: ""
-      })
+      }))
     }
   }
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-8">
+      {/* Header Banner */}
       <div className="p-6 bg-gradient-to-r from-slate-900 to-indigo-950 text-white flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-indigo-500/30 text-indigo-300 border border-indigo-400/30">
-              App & Website Startup
+              Admin Control Center
             </span>
           </div>
           <h3 className="text-xl font-black tracking-tight text-white">Startup Announcement & Media Modal</h3>
-          <p className="text-xs text-slate-300 mt-1">
-            Display a video, photo, or important announcement popup every time someone launches the app or website.
+          <p className="text-xs text-slate-300 mt-1 max-w-xl">
+            Admin has master power to enable or disable this popup at any time. When enabled, your chosen video, photo, or notice pops up on every launch.
           </p>
         </div>
 
-        {/* Master Active Switch */}
-        <div className="flex items-center gap-3 bg-white/10 p-2 px-4 rounded-xl backdrop-blur-sm border border-white/10">
-          <span className="text-xs font-bold text-white">
-            {config.enabled ? "STATUS: ACTIVE" : "STATUS: OFF"}
-          </span>
+        {/* Master Quick Switch in Header */}
+        <div className="flex items-center gap-3 bg-white/10 p-2.5 px-4 rounded-xl backdrop-blur-sm border border-white/10 shrink-0">
+          <div className="text-right">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-300">Power Switch</div>
+            <div className={`text-xs font-black ${config.enabled ? "text-emerald-300" : "text-slate-400"}`}>
+              {config.enabled ? "LIVE & ACTIVE" : "DISABLED (OFF)"}
+            </div>
+          </div>
           <button
             type="button"
-            onClick={() => setConfig({ ...config, enabled: !config.enabled })}
-            className={`w-12 h-6 rounded-full relative transition-colors ${
+            disabled={toggleLoading}
+            onClick={() => handleTogglePower()}
+            title={config.enabled ? "Click to Disable Startup Popup" : "Click to Enable Startup Popup"}
+            className={`w-14 h-7 rounded-full relative transition-colors focus:outline-none disabled:opacity-50 ${
               config.enabled ? "bg-emerald-500" : "bg-slate-600"
             }`}
           >
             <span
-              className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${
-                config.enabled ? "translate-x-6" : "translate-x-0"
+              className={`absolute top-1 left-1 bg-white w-5 h-5 rounded-full shadow-md flex items-center justify-center transition-transform ${
+                config.enabled ? "translate-x-7" : "translate-x-0"
               }`}
-            />
+            >
+              {toggleLoading ? (
+                <Loader2 className="w-3 h-3 text-slate-700 animate-spin" />
+              ) : (
+                <Power className={`w-3 h-3 ${config.enabled ? "text-emerald-600" : "text-slate-400"}`} />
+              )}
+            </span>
           </button>
         </div>
       </div>
 
+      {/* Prominent High-Visibility Status & Power Banner */}
+      <div className={`p-5 border-b flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors ${
+        config.enabled
+          ? "bg-emerald-50/70 border-emerald-200"
+          : "bg-slate-100/70 border-slate-200"
+      }`}>
+        <div className="flex items-start gap-3">
+          <div className={`mt-0.5 p-2 rounded-xl shrink-0 ${
+            config.enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"
+          }`}>
+            <Power className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className={`w-2.5 h-2.5 rounded-full ${
+                config.enabled ? "bg-emerald-500 animate-ping" : "bg-slate-400"
+              }`} />
+              <h4 className={`text-sm font-black tracking-tight ${
+                config.enabled ? "text-emerald-950" : "text-slate-900"
+              }`}>
+                {config.enabled
+                  ? "POPUP STATUS: ENABLED & ACTIVE ON ALL DEVICES"
+                  : "POPUP STATUS: CURRENTLY DISABLED (OFF)"}
+              </h4>
+            </div>
+            <p className="text-xs text-slate-600 mt-0.5">
+              {config.enabled
+                ? "Every time any elder, child, or visitor opens the Android app, iOS app, or website, this popup will appear."
+                : "The app and website will open directly without showing any startup announcement, photo, or video."}
+            </p>
+          </div>
+        </div>
+
+        {/* Big 1-Click Toggle Button */}
+        <button
+          type="button"
+          disabled={toggleLoading}
+          onClick={() => handleTogglePower()}
+          className={`px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition shadow-sm flex items-center justify-center gap-2 self-start md:self-auto shrink-0 disabled:opacity-50 ${
+            config.enabled
+              ? "bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/20"
+              : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20"
+          }`}
+        >
+          {toggleLoading ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Updating Status...</span>
+            </>
+          ) : config.enabled ? (
+            <>
+              <Power className="w-4 h-4" />
+              <span>Turn OFF / Disable Popup</span>
+            </>
+          ) : (
+            <>
+              <Power className="w-4 h-4" />
+              <span>Turn ON / Enable Popup</span>
+            </>
+          )}
+        </button>
+      </div>
+
+      {toggleNotice && (
+        <div className={`p-4 border-b text-xs font-bold ${
+          config.enabled
+            ? "bg-emerald-100/80 border-emerald-300 text-emerald-900"
+            : "bg-slate-200/80 border-slate-300 text-slate-800"
+        }`}>
+          {toggleNotice}
+        </div>
+      )}
+
+      {/* Content Customization Form */}
       <form onSubmit={handleSave} className="p-6 space-y-6">
         {/* Type Selector */}
         <div>
-          <label className="block text-sm font-bold text-slate-700 mb-2">Startup Content Type</label>
-          <div className="grid grid-cols-3 gap-3">
+          <label className="block text-sm font-bold text-slate-700 mb-2">Startup Media Type</label>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[
               { type: "TEXT" as StartupPopupType, label: "Text Notice", icon: FileText, desc: "Announcement card" },
-              { type: "IMAGE" as StartupPopupType, label: "Photo / Image", icon: ImageIcon, desc: "Banner, poster, greeting" },
-              { type: "VIDEO" as StartupPopupType, label: "Video", icon: Film, desc: "YouTube or MP4 video" }
+              { type: "IMAGE" as StartupPopupType, label: "Photo / Poster", icon: ImageIcon, desc: "Banner, poster, greeting image" },
+              { type: "VIDEO" as StartupPopupType, label: "Video", icon: Film, desc: "YouTube link or direct MP4 video" }
             ].map(item => {
               const isSelected = config.type === item.type
               const Icon = item.icon
@@ -122,7 +244,7 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
                 <button
                   key={item.type}
                   type="button"
-                  onClick={() => setConfig({ ...config, type: item.type })}
+                  onClick={() => setConfig(prev => ({ ...prev, type: item.type }))}
                   className={`p-3.5 rounded-xl border-2 text-left transition ${
                     isSelected
                       ? "border-indigo-600 bg-indigo-50/50 text-indigo-950 shadow-sm"
@@ -158,7 +280,7 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
               type="text"
               required
               value={config.title}
-              onChange={e => setConfig({ ...config, title: e.target.value })}
+              onChange={e => setConfig(prev => ({ ...prev, title: e.target.value }))}
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-900 text-sm"
               placeholder="e.g. Welcome to ElderSaath"
             />
@@ -174,7 +296,7 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
                 type="url"
                 required
                 value={config.mediaUrl}
-                onChange={e => setConfig({ ...config, mediaUrl: e.target.value })}
+                onChange={e => setConfig(prev => ({ ...prev, mediaUrl: e.target.value }))}
                 className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 font-medium text-slate-900 text-sm font-mono"
                 placeholder={
                   config.type === "VIDEO"
@@ -195,7 +317,7 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
             <textarea
               rows={3}
               value={config.message}
-              onChange={e => setConfig({ ...config, message: e.target.value })}
+              onChange={e => setConfig(prev => ({ ...prev, message: e.target.value }))}
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 font-medium text-slate-900 text-sm resize-none"
               placeholder="Enter message details or description..."
             />
@@ -206,7 +328,7 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
             <input
               type="text"
               value={config.buttonText}
-              onChange={e => setConfig({ ...config, buttonText: e.target.value })}
+              onChange={e => setConfig(prev => ({ ...prev, buttonText: e.target.value }))}
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 font-bold text-slate-900 text-sm"
               placeholder="e.g. Continue to App"
             />
@@ -217,7 +339,7 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
             <input
               type="text"
               value={config.buttonLink}
-              onChange={e => setConfig({ ...config, buttonLink: e.target.value })}
+              onChange={e => setConfig(prev => ({ ...prev, buttonLink: e.target.value }))}
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 font-medium text-slate-900 text-sm"
               placeholder="Leave empty to just close modal, or e.g. /elder/medications"
             />
@@ -237,7 +359,7 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
             </button>
             {saveSuccess && (
               <span className="text-emerald-600 text-xs font-bold inline-flex items-center gap-1">
-                <Check className="w-4 h-4" /> Saved and live across app & website!
+                <Check className="w-4 h-4" /> Content updated and saved successfully!
               </span>
             )}
           </div>
@@ -245,9 +367,10 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
           <button
             type="submit"
             disabled={loading}
-            className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm tracking-wide transition shadow-md disabled:opacity-50"
+            className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm tracking-wide transition shadow-md disabled:opacity-50 flex items-center gap-2"
           >
-            {loading ? "Saving..." : "Save & Publish"}
+            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+            {loading ? "Saving Content..." : "Save & Publish Content"}
           </button>
         </div>
       </form>

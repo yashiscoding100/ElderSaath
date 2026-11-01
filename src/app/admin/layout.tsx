@@ -30,7 +30,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             🔗 Connections
           </Link>
           <Link href="/admin/notices" className="block px-4 py-3 rounded-lg hover:bg-slate-800 hover:text-white transition font-medium">
-            📢 Notices
+            📢 Notices & Startup Media
           </Link>
         </nav>
 
