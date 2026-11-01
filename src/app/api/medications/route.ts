@@ -104,6 +104,11 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 403 })
     }
 
+    // Reset old trigger logs when editing so newly scheduled time can fire freely
+    await prisma.medicationLog.deleteMany({
+      where: { medicationId: id, status: "TRIGGERED" }
+    }).catch(() => {})
+
     const updatedMed = await prisma.medication.update({
       where: { id },
       data: { name, dosage, frequency, time, instructions }

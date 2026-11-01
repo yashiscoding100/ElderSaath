@@ -10,35 +10,40 @@ const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || ""
 const privateKey = process.env.VAPID_PRIVATE_KEY || ""
 
 if (publicKey && privateKey) {
-  webpush.setVapidDetails(
-    "mailto:support@eldersaath.com",
-    publicKey,
-    privateKey
-  )
+  try {
+    webpush.setVapidDetails(
+      "mailto:support@eldersaath.com",
+      publicKey,
+      privateKey
+    )
+  } catch (e) {
+    console.error("VAPID init error:", e)
+  }
 }
 
 // 2. Setup Firebase Admin (FCM)
-export let firebaseInitialized = false
 export let firebaseInitError = ""
-try {
-  if (!getApps().length) {
+
+export function ensureFirebaseInit(): boolean {
+  if (getApps().length > 0) {
+    return true
+  }
+
+  try {
     let serviceAccount = null
     
     // First try env vars (for Vercel)
     if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
-      let rawKey = process.env.FIREBASE_PRIVATE_KEY;
+      let rawKey = process.env.FIREBASE_PRIVATE_KEY
       
-      // 1. Strip literal quotes
-      rawKey = rawKey.replace(/"/g, '');
-      // 2. Strip literal escaped slashes (\n, \r)
-      rawKey = rawKey.replace(/\\n/g, '').replace(/\\r/g, '');
-      // 3. Strip all actual whitespace and newlines
-      rawKey = rawKey.replace(/\s+/g, '');
+      // Clean up key format
+      rawKey = rawKey.replace(/"/g, '')
+      rawKey = rawKey.replace(/\\n/g, '').replace(/\\r/g, '')
+      rawKey = rawKey.replace(/\s+/g, '')
       
-      // 4. Extract the base64 payload and reconstruct a perfectly valid PEM
-      const base64Match = rawKey.match(/-----BEGINPRIVATEKEY-----(.+)-----ENDPRIVATEKEY-----/);
+      const base64Match = rawKey.match(/-----BEGINPRIVATEKEY-----(.+)-----ENDPRIVATEKEY-----/)
       if (base64Match && base64Match[1]) {
-        rawKey = '-----BEGIN PRIVATE KEY-----\n' + base64Match[1] + '\n-----END PRIVATE KEY-----\n';
+        rawKey = '-----BEGIN PRIVATE KEY-----\n' + base64Match[1] + '\n-----END PRIVATE KEY-----\n'
       }
       
       serviceAccount = {
@@ -61,22 +66,21 @@ try {
       initializeApp({
         credential: cert(serviceAccount)
       })
-      firebaseInitialized = true
+      return true
     }
-  } else {
-    firebaseInitialized = true
+  } catch (e: any) {
+    firebaseInitError = e.message || "Unknown init error"
+    console.error("Firebase admin init error:", e)
   }
-} catch (e: any) {
-  firebaseInitError = e.message || "Unknown init error"
-  console.error("Firebase admin init error:", e)
+
+  return getApps().length > 0
 }
 
 export async function sendPushNotification(userId: string, payload: Record<string, unknown>) {
   // Force an in-app database notification for the Bell icon
-  // This ensures iOS, Windows, and Web users get the alert even without native FCM/WebPush subscriptions
   try {
-    const title = (payload.title as string) || (payload.label as string) || "Notification";
-    const body = (payload.body as string) || "";
+    const title = (payload.title as string) || (payload.label as string) || "Notification"
+    const body = (payload.body as string) || ""
     await prisma.appNotification.create({
       data: {
         userId,
@@ -85,25 +89,29 @@ export async function sendPushNotification(userId: string, payload: Record<strin
         type: payload.type === "ALARM" || payload.type === "EMERGENCY" ? "ALERT" : "INFO",
         link: (payload.url as string) || null
       }
-    });
+    })
   } catch (dbErr) {
-    console.error("Failed to save AppNotification", dbErr);
+    console.error("Failed to save AppNotification", dbErr)
   }
 
   const subscriptions = await prisma.pushSubscription.findMany({
     where: { userId }
   })
 
-  const notifications = subscriptions.map(sub => {
+  console.log(`[Push] Found ${subscriptions.length} subscriptions for user ${userId}`)
+
+  const isFcmReady = ensureFirebaseInit()
+
+  const notifications = subscriptions.map(async sub => {
     // Check if it's an FCM native token
     if (sub.endpoint.startsWith("fcm:")) {
-      if (!firebaseInitialized) {
-        console.error("FIREBASE INIT FAILED: " + firebaseInitError);
-        return Promise.resolve();
+      if (!isFcmReady) {
+        console.error("FIREBASE INIT FAILED: " + firebaseInitError)
+        return
       }
       
       const token = sub.endpoint.replace("fcm:", "")
-      const isAlarm = payload.type === 'ALARM';
+      const isAlarm = payload.type === 'ALARM'
       const message: any = {
         ...(isAlarm ? {} : {
           notification: {
@@ -124,19 +132,22 @@ export async function sendPushNotification(userId: string, payload: Record<strin
         }
       }
       
-      return getMessaging().send(message)
-        .catch((error: any) => {
-          console.error("Firebase push error:", error)
-          if (error.code === 'messaging/registration-token-not-registered') {
-            return prisma.pushSubscription.delete({ where: { id: sub.id } })
-          }
-          throw new Error("FIREBASE SEND ERROR: " + error.message);
-        })
+      try {
+        const response = await getMessaging().send(message)
+        console.log(`[Push] Successfully sent FCM alarm to user ${userId}, messageId: ${response}`)
+        return response
+      } catch (error: any) {
+        console.error("Firebase push error:", error)
+        if (error.code === 'messaging/registration-token-not-registered') {
+          await prisma.pushSubscription.delete({ where: { id: sub.id } })
+        }
+        throw error
+      }
     } 
     
     // Otherwise, handle as standard Web Push
     else {
-      if (!publicKey || !privateKey) return Promise.resolve()
+      if (!publicKey || !privateKey) return
       
       const pushSubscription = {
         endpoint: sub.endpoint,
@@ -146,71 +157,18 @@ export async function sendPushNotification(userId: string, payload: Record<strin
         }
       }
       
-      return webpush.sendNotification(pushSubscription, JSON.stringify(payload))
-        .catch((error: any) => {
-          console.error("Web push error:", error)
-          if (error.statusCode === 410 || error.statusCode === 404) {
-            return prisma.pushSubscription.delete({ where: { id: sub.id } })
-          }
-        })
-    }
-  })
-
-  await Promise.all(notifications)
-}
-
-export async function broadcastPushNotification(payload: Record<string, unknown>) {
-  const subscriptions = await prisma.pushSubscription.findMany()
-
-  const notifications = subscriptions.map(sub => {
-    // Check if it's an FCM native token
-    if (sub.endpoint.startsWith("fcm:")) {
-      if (!firebaseInitialized) return Promise.resolve()
-      
-      const token = sub.endpoint.replace("fcm:", "")
-      const isAlarm = payload.type === 'ALARM';
-      const message: any = {
-        ...(isAlarm ? {} : {
-          notification: {
-            title: payload.title as string,
-            body: payload.body as string,
-          }
-        }),
-        data: payload as Record<string, string>,
-        token: token,
-        android: { priority: "high" as const, ...(isAlarm ? {} : { notification: { channelId: "sos_alarms", sound: "default" } }) }
-      }
-      
-      return getMessaging().send(message)
-        .catch((error: any) => {
-          console.error("Firebase push error:", error)
-          if (error.code === 'messaging/registration-token-not-registered') {
-            return prisma.pushSubscription.delete({ where: { id: sub.id } })
-          }
-        })
-    } 
-    
-    // Otherwise, handle as standard Web Push
-    else {
-      if (!publicKey || !privateKey) return Promise.resolve()
-      
-      const pushSubscription = {
-        endpoint: sub.endpoint,
-        keys: {
-          p256dh: sub.p256dh,
-          auth: sub.auth
+      try {
+        return await webpush.sendNotification(
+          pushSubscription as any,
+          JSON.stringify(payload)
+        )
+      } catch (err: any) {
+        if (err.statusCode === 410 || err.statusCode === 404) {
+          await prisma.pushSubscription.delete({ where: { id: sub.id } })
         }
       }
-      
-      return webpush.sendNotification(pushSubscription, JSON.stringify(payload))
-        .catch((error: any) => {
-          console.error("Web push error:", error)
-          if (error.statusCode === 410 || error.statusCode === 404) {
-            return prisma.pushSubscription.delete({ where: { id: sub.id } })
-          }
-        })
     }
   })
 
-  await Promise.all(notifications)
+  return Promise.allSettled(notifications)
 }

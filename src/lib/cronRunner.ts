@@ -24,20 +24,16 @@ function getIstTime() {
   if (hour === 24) hour = 0
   const currentTotalMinutes = hour * 60 + minute
 
-  // Date in IST for day of week and start of today
+  // Date in IST for day of week
   const istDateStr = now.toLocaleDateString("en-US", { timeZone: "Asia/Kolkata" })
   const istDate = new Date(istDateStr)
   const dayOfWeek = istDate.getDay().toString() // "0" = Sun, "1" = Mon, etc.
-
-  // Start of today in IST (UTC epoch)
-  const startOfTodayIst = new Date(istDate.getFullYear(), istDate.getMonth(), istDate.getDate())
 
   return {
     hour,
     minute,
     currentTotalMinutes,
-    dayOfWeek,
-    startOfTodayIst
+    dayOfWeek
   }
 }
 
@@ -68,7 +64,7 @@ export function parseTimeToMinutes(timeStr: string | null | undefined): number |
 }
 
 export async function runMedicationAndTaskCrons(forceAll: boolean = false) {
-  const { hour, minute, currentTotalMinutes, dayOfWeek, startOfTodayIst } = getIstTime()
+  const { hour, minute, currentTotalMinutes, dayOfWeek } = getIstTime()
   
   console.log(`[CronRunner] Current IST: ${hour}:${minute} (${currentTotalMinutes}m), Day: ${dayOfWeek}, Force: ${forceAll}`)
 
@@ -79,6 +75,9 @@ export async function runMedicationAndTaskCrons(forceAll: boolean = false) {
 
   let firedMedsCount = 0
   const details: any[] = []
+
+  // Cooldown window: only suppress if triggered within the last 3 minutes
+  const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000)
 
   for (const med of allMeds) {
     // Check day of week
@@ -94,25 +93,24 @@ export async function runMedicationAndTaskCrons(forceAll: boolean = false) {
     if (medMinutes === null) continue
 
     // Time window check:
-    // With a 5-minute cron interval, allow matching if scheduled within the last 6 minutes
-    // e.g. scheduled at 21:50, cron runs at 21:54 -> diff = 4 minutes (MATCH!)
+    // Trigger if scheduled within the last 5 minutes (or forceAll)
     const diff = currentTotalMinutes - medMinutes
-    const isDue = forceAll || (diff >= 0 && diff <= 6)
+    const isDue = forceAll || (diff >= 0 && diff <= 5)
 
     if (!isDue) {
       continue
     }
 
-    // Check if an alarm log was already recorded today to avoid duplicate rings
-    const existingLog = await prisma.medicationLog.findFirst({
+    // Check if an alarm log was recently recorded within the last 3 minutes
+    const recentLog = await prisma.medicationLog.findFirst({
       where: {
         medicationId: med.id,
-        timestamp: { gte: startOfTodayIst }
+        timestamp: { gte: threeMinutesAgo }
       }
     })
 
-    if (existingLog && !forceAll) {
-      console.log(`[CronRunner] Med ${med.name} (${med.time}) was already logged today, skipping duplicate.`)
+    if (recentLog && !forceAll) {
+      console.log(`[CronRunner] Med ${med.name} (${med.time}) was already triggered in the last 3 mins, skipping.`)
       continue
     }
 
@@ -132,7 +130,7 @@ export async function runMedicationAndTaskCrons(forceAll: boolean = false) {
         stickyNotification: med.elder.elderProfile?.stickyAlarmNotification !== false ? "true" : "false"
       })
 
-      // Record in MedicationLog so it won't fire again today
+      // Record in MedicationLog
       await prisma.medicationLog.create({
         data: {
           medicationId: med.id,
@@ -167,7 +165,7 @@ export async function runMedicationAndTaskCrons(forceAll: boolean = false) {
     if (taskMinutes === null) continue
 
     const diff = currentTotalMinutes - taskMinutes
-    const isDue = forceAll || (diff >= 0 && diff <= 6)
+    const isDue = forceAll || (diff >= 0 && diff <= 5)
     if (!isDue) continue
 
     firedTasksCount++
