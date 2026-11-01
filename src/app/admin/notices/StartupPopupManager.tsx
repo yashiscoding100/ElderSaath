@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import {
   Film,
   Image as ImageIcon,
@@ -16,7 +16,12 @@ import {
   X,
   Timer,
   CheckCircle2,
-  Sliders
+  Sliders,
+  Upload,
+  Link as LinkIcon,
+  HardDrive,
+  Info,
+  Trash2
 } from "lucide-react"
 import { StartupPopupConfig, StartupPopupType, DismissMode } from "@/lib/startupPopup"
 
@@ -27,6 +32,16 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [toggleNotice, setToggleNotice] = useState<string | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
+
+  // Media Source Mode: Upload from Device or Paste Link
+  const isExistingUploaded = config.mediaUrl?.startsWith("data:") || config.mediaUrl?.includes("blob.vercel-storage.com")
+  const [mediaSourceTab, setMediaSourceTab] = useState<"UPLOAD" | "LINK">(
+    isExistingUploaded ? "UPLOAD" : (config.mediaUrl ? "LINK" : "UPLOAD")
+  )
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploadLoading, setUploadLoading] = useState(false)
+  const [uploadedInfo, setUploadedInfo] = useState<{ filename: string; size: number; storage: string } | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   // Instant 1-Click Power Toggle (persists directly to server)
   const handleTogglePower = async (forcedState?: boolean) => {
@@ -58,6 +73,47 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
       alert("Network error: " + err.message)
     } finally {
       setToggleLoading(false)
+    }
+  }
+
+  // Handle Device File Upload
+  const handleFileUpload = async (fileToUpload: File) => {
+    if (!fileToUpload) return
+
+    // 4.5 MB Vercel Serverless payload limit check
+    if (fileToUpload.size > 4.5 * 1024 * 1024) {
+      alert(
+        `File is ${(fileToUpload.size / (1024 * 1024)).toFixed(1)} MB.\n\nDirect server uploads have a 4.5 MB limit. For high-resolution or longer videos, paste a YouTube link under the "Web Link / YouTube" tab for 100% free, unlimited HD streaming without using any database quota!`
+      )
+      return
+    }
+
+    setUploadLoading(true)
+    const formData = new FormData()
+    formData.append("file", fileToUpload)
+
+    try {
+      const res = await fetch("/api/admin/startup-popup/upload", {
+        method: "POST",
+        body: formData
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        setConfig(prev => ({ ...prev, mediaUrl: data.url }))
+        setUploadedInfo({
+          filename: data.filename || fileToUpload.name,
+          size: fileToUpload.size,
+          storage: data.storage || "Vercel / Supabase"
+        })
+      } else {
+        const err = await res.json()
+        alert("Upload failed: " + (err.message || "Unknown error"))
+      }
+    } catch (e: any) {
+      alert("Network error during file upload: " + e.message)
+    } finally {
+      setUploadLoading(false)
     }
   }
 
@@ -101,6 +157,7 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
         dismissMode: "FULL_VIDEO_REQUIRED",
         lockDurationSeconds: 20
       }))
+      setMediaSourceTab("LINK")
     } else if (type === "IMAGE") {
       setConfig(prev => ({
         ...prev,
@@ -113,6 +170,7 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
         dismissMode: "TIMER_REQUIRED",
         lockDurationSeconds: 5
       }))
+      setMediaSourceTab("LINK")
     } else {
       setConfig(prev => ({
         ...prev,
@@ -126,6 +184,12 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
         lockDurationSeconds: 0
       }))
     }
+  }
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + " B"
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB"
+    return (bytes / (1024 * 1024)).toFixed(2) + " MB"
   }
 
   const formatDurationDisplay = (seconds: number) => {
@@ -149,7 +213,7 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
           </div>
           <h3 className="text-xl font-black tracking-tight text-white">Startup Announcement & Media Modal</h3>
           <p className="text-xs text-slate-300 mt-1 max-w-xl">
-            Admin has master power to enable/disable this popup and decide whether the close button is shown, or if users must watch the full video or wait for a specific duration.
+            Upload videos or posters directly from your device, configure YouTube links, set dismissal countdown rules, and control the close button.
           </p>
         </div>
 
@@ -272,7 +336,7 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
               {[
                 { type: "TEXT" as StartupPopupType, label: "Text Notice", icon: FileText, desc: "Announcement card" },
                 { type: "IMAGE" as StartupPopupType, label: "Photo / Poster", icon: ImageIcon, desc: "Banner, poster, greeting image" },
-                { type: "VIDEO" as StartupPopupType, label: "Video", icon: Film, desc: "YouTube link or direct MP4 video" }
+                { type: "VIDEO" as StartupPopupType, label: "Video", icon: Film, desc: "Upload video or YouTube link" }
               ].map(item => {
                 const isSelected = config.type === item.type
                 const Icon = item.icon
@@ -281,7 +345,6 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
                     key={item.type}
                     type="button"
                     onClick={() => {
-                      // If switching away from VIDEO, ensure dismissMode isn't stuck on FULL_VIDEO_REQUIRED
                       const newDismissMode = item.type !== "VIDEO" && config.dismissMode === "FULL_VIDEO_REQUIRED"
                         ? "TIMER_REQUIRED"
                         : config.dismissMode
@@ -304,7 +367,7 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
             </div>
           </div>
 
-          {/* Title and Media URL */}
+          {/* Title and Media Upload/Link */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
               <div className="flex justify-between items-center mb-1">
@@ -328,23 +391,168 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
               />
             </div>
 
+            {/* Media Upload / URL Section (When IMAGE or VIDEO is selected) */}
             {config.type !== "TEXT" && (
-              <div className="md:col-span-2">
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  {config.type === "VIDEO" ? "Video URL (YouTube link or .mp4 link)" : "Photo / Image URL"}
-                </label>
-                <input
-                  type="url"
-                  required
-                  value={config.mediaUrl}
-                  onChange={e => setConfig(prev => ({ ...prev, mediaUrl: e.target.value }))}
-                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 font-medium text-slate-900 text-sm font-mono"
-                  placeholder={
-                    config.type === "VIDEO"
-                      ? "https://www.youtube.com/watch?v=... or https://mysite.com/video.mp4"
-                      : "https://images.unsplash.com/... or https://..."
-                  }
-                />
+              <div className="md:col-span-2 bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/80 pb-3">
+                  <div>
+                    <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                      {config.type === "VIDEO" ? "Video Source" : "Photo / Poster Source"}
+                    </span>
+                    <p className="text-[11px] text-slate-500">
+                      Choose whether to upload a file directly from this device or paste an external link / YouTube URL.
+                    </p>
+                  </div>
+
+                  {/* Tabs: Upload vs Link */}
+                  <div className="flex bg-slate-200 p-1 rounded-xl shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setMediaSourceTab("UPLOAD")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                        mediaSourceTab === "UPLOAD"
+                          ? "bg-white text-indigo-700 shadow-sm"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      Upload from Device
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMediaSourceTab("LINK")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                        mediaSourceTab === "LINK"
+                          ? "bg-white text-indigo-700 shadow-sm"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      <LinkIcon className="w-3.5 h-3.5" />
+                      {config.type === "VIDEO" ? "YouTube / Web Link" : "Web Image Link"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* TAB A: Upload from Device */}
+                {mediaSourceTab === "UPLOAD" && (
+                  <div className="space-y-3">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept={config.type === "VIDEO" ? "video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov" : "image/*"}
+                      className="hidden"
+                      onChange={e => {
+                        const file = e.target.files?.[0]
+                        if (file) {
+                          setUploadFile(file)
+                          handleFileUpload(file)
+                        }
+                      }}
+                    />
+
+                    <div
+                      onClick={() => fileInputRef.current?.click()}
+                      className="border-2 border-dashed border-indigo-200 hover:border-indigo-500 bg-white hover:bg-indigo-50/20 rounded-2xl p-6 text-center cursor-pointer transition flex flex-col items-center justify-center gap-2 group"
+                    >
+                      <div className="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 group-hover:scale-110 transition flex items-center justify-center">
+                        {uploadLoading ? (
+                          <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
+                        ) : (
+                          <Upload className="w-6 h-6" />
+                        )}
+                      </div>
+                      <div>
+                        <span className="font-bold text-sm text-slate-800">
+                          {uploadLoading
+                            ? "Uploading file to server..."
+                            : config.type === "VIDEO"
+                            ? "Click to browse & upload video from your device"
+                            : "Click to browse & upload photo from your device"}
+                        </span>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {config.type === "VIDEO"
+                            ? "Supports MP4, WebM, MOV (Max 4.5 MB for direct serverless upload)"
+                            : "Supports PNG, JPG, WebP, GIF"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Active Upload Success Badge */}
+                    {config.mediaUrl && (config.mediaUrl.startsWith("data:") || config.mediaUrl.includes("blob.vercel-storage.com")) && (
+                      <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between gap-3 text-xs">
+                        <div className="flex items-center gap-2 text-emerald-900 font-semibold truncate">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span className="truncate">
+                            Device file active: {uploadedInfo?.filename || "Uploaded media file"}
+                          </span>
+                          {uploadedInfo?.size && (
+                            <span className="text-emerald-700 bg-emerald-100/60 px-1.5 py-0.5 rounded text-[10px]">
+                              {formatFileSize(uploadedInfo.size)}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setConfig(prev => ({ ...prev, mediaUrl: "" }))
+                            setUploadedInfo(null)
+                            setUploadFile(null)
+                          }}
+                          className="text-rose-600 hover:text-rose-800 font-bold flex items-center gap-1 shrink-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Remove
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* TAB B: Paste Link / YouTube */}
+                {mediaSourceTab === "LINK" && (
+                  <div className="space-y-2">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                      {config.type === "VIDEO" ? "Video URL (YouTube link or .mp4 link)" : "Photo / Image URL"}
+                    </label>
+                    <input
+                      type="url"
+                      value={config.mediaUrl.startsWith("data:") ? "" : config.mediaUrl}
+                      onChange={e => setConfig(prev => ({ ...prev, mediaUrl: e.target.value }))}
+                      className="w-full p-3 bg-white border border-slate-200 rounded-xl outline-none focus:border-indigo-500 font-medium text-slate-900 text-sm font-mono"
+                      placeholder={
+                        config.type === "VIDEO"
+                          ? "https://www.youtube.com/watch?v=... or https://mysite.com/video.mp4"
+                          : "https://images.unsplash.com/... or https://..."
+                      }
+                    />
+                    <p className="text-[11px] text-slate-500">
+                      {config.type === "VIDEO"
+                        ? "Paste any standard YouTube watch or Shorts link. YouTube handles HD compression, fast mobile buffering, and consumes 0 MB of your Supabase storage quota."
+                        : "Paste any publicly accessible image link (JPG, PNG, WebP)."}
+                    </p>
+                  </div>
+                )}
+
+                {/* Storage & Free Tier Quota Information Box */}
+                <div className="p-4 bg-white border border-slate-200 rounded-xl flex items-start gap-3">
+                  <HardDrive className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1 text-xs text-slate-600">
+                    <span className="font-bold text-slate-800 block">
+                      Storage & Free Tier Quota Breakdown
+                    </span>
+                    <ul className="list-disc list-inside space-y-0.5 text-[11px] text-slate-600">
+                      <li>
+                        <strong>Supabase Free Database:</strong> 500 MB total disk storage. Notice text, title, and settings are saved here.
+                      </li>
+                      <li>
+                        <strong>Device File Uploads:</strong> Files uploaded here are hosted on Vercel Blob CDN / Supabase (1 GB Free file quota). Direct serverless upload is limited to 4.5 MB.
+                      </li>
+                      <li>
+                        <strong>YouTube Link Strategy:</strong> YouTube hosts videos for <strong>100% Free with Unlimited Storage and Bandwidth</strong>. For videos larger than a few megabytes, pasting a YouTube link is the recommended zero-cost choice!
+                      </li>
+                    </ul>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -595,7 +803,7 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
             </button>
             {saveSuccess && (
               <span className="text-emerald-600 text-xs font-bold inline-flex items-center gap-1">
-                <Check className="w-4 h-4" /> All settings and dismissal rules saved live!
+                <Check className="w-4 h-4" /> All settings and media saved live!
               </span>
             )}
           </div>
@@ -615,7 +823,7 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
       {previewOpen && (
         <div className="p-6 bg-slate-950 border-t border-slate-800 text-center">
           <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-            Live Preview (Reflecting Current Dismissal Rules)
+            Live Preview (Reflecting Current Uploaded Media & Dismissal Rules)
           </div>
           <div className="max-w-md mx-auto bg-slate-900 border border-slate-700 rounded-3xl p-5 text-left shadow-2xl space-y-3 relative overflow-hidden">
             {/* Top-Right Preview Indicator */}
@@ -634,7 +842,11 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
 
             {config.type === "VIDEO" && config.mediaUrl && (
               <div className="aspect-video bg-black rounded-xl overflow-hidden flex items-center justify-center">
-                <PlayCircle className="w-12 h-12 text-white/50" />
+                {config.mediaUrl.startsWith("data:") || config.mediaUrl.endsWith(".mp4") || config.mediaUrl.includes("blob.vercel-storage.com") ? (
+                  <video src={config.mediaUrl} controls className="w-full h-full object-contain" />
+                ) : (
+                  <PlayCircle className="w-12 h-12 text-white/50" />
+                )}
               </div>
             )}
             {config.type === "IMAGE" && config.mediaUrl && (
