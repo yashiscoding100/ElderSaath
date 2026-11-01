@@ -22,10 +22,12 @@ if (publicKey && privateKey) {
 }
 
 // 2. Setup Firebase Admin (FCM)
+export let firebaseInitialized = false
 export let firebaseInitError = ""
 
 export function ensureFirebaseInit(): boolean {
   if (getApps().length > 0) {
+    firebaseInitialized = true
     return true
   }
 
@@ -66,6 +68,7 @@ export function ensureFirebaseInit(): boolean {
       initializeApp({
         credential: cert(serviceAccount)
       })
+      firebaseInitialized = true
       return true
     }
   } catch (e: any) {
@@ -73,7 +76,8 @@ export function ensureFirebaseInit(): boolean {
     console.error("Firebase admin init error:", e)
   }
 
-  return getApps().length > 0
+  firebaseInitialized = getApps().length > 0
+  return firebaseInitialized
 }
 
 export async function sendPushNotification(userId: string, payload: Record<string, unknown>) {
@@ -171,4 +175,10 @@ export async function sendPushNotification(userId: string, payload: Record<strin
   })
 
   return Promise.allSettled(notifications)
+}
+
+export async function broadcastPushNotification(payload: Record<string, unknown>) {
+  const users = await prisma.user.findMany({ select: { id: true } })
+  const promises = users.map(u => sendPushNotification(u.id, payload))
+  return Promise.allSettled(promises)
 }

@@ -4,6 +4,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { EditUserModal } from "./EditUserModal"
 import { NotificationModal } from "./NotificationModal"
+import { ChangePasswordModal } from "./ChangePasswordModal"
 import { getImpersonationSecret } from "../actions"
 import { signIn } from "next-auth/react"
 
@@ -68,7 +69,7 @@ export function UserRow({ user }: { user: User }) {
   }
 
   const handleBlockToggle = async () => {
-    let blockMessage = null;
+    let blockMessage = null
     
     if (!user.isBlocked) {
       blockMessage = prompt("Enter a message to show the user (e.g., 'Subscription Overdue'):")
@@ -114,16 +115,17 @@ export function UserRow({ user }: { user: User }) {
         </span>
       </td>
       <td className="p-4 text-slate-500 text-sm">{new Date(user.createdAt).toLocaleDateString()}</td>
-      <td className="p-4 text-right flex justify-end gap-2 items-center">
+      <td className="p-4 text-right flex justify-end gap-2 items-center flex-wrap">
         {user.role !== "ADMIN" && (
           <>
+            <ChangePasswordModal user={user} />
             <button 
               onClick={handleTestAlarm}
               disabled={loading}
               className="text-amber-600 hover:text-amber-700 font-bold text-sm bg-amber-50 hover:bg-amber-100 px-3 py-1 rounded-md transition disabled:opacity-50"
               title="Send a custom notification to this user"
             >
-              🔔 Send Alert
+              🔔 Alert
             </button>
             <button 
               onClick={handleImpersonate}
@@ -162,4 +164,3 @@ export function UserRow({ user }: { user: User }) {
     </tr>
   )
 }
-
