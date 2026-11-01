@@ -2,8 +2,9 @@ name: ElderSaath Background Crons
 
 on:
   schedule:
-    # Runs every 5 minutes to check for unacknowledged SOS emergencies
+    # Runs every 5 minutes
     - cron: '*/5 * * * *'
+  workflow_dispatch:
 
 jobs:
   run-crons:
@@ -12,5 +13,5 @@ jobs:
       - name: Trigger SOS Escalation
         run: curl -s -X GET "https://eldersaath.vercel.app/api/cron/sos-escalation"
         
-      - name: Trigger Medication Reminders
-        run: curl -s -X GET "https://eldersaath.vercel.app/api/cron/medications"
+      - name: Trigger Unified Medication & Task Alarms
+        run: curl -s -X GET "https://eldersaath.vercel.app/api/cron"
