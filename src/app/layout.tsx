@@ -4,6 +4,7 @@ import "./globals.css";
 import { Providers } from "@/components/Providers";
 import { BillingBlocker } from "@/components/BillingBlocker";
 import { MandatoryPermissions } from "@/components/MandatoryPermissions";
+import { StartupPopupModal } from "@/components/StartupPopupModal";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -39,6 +40,7 @@ export default function RootLayout({
         <Providers>
           <BillingBlocker />
           <MandatoryPermissions />
+          <StartupPopupModal />
           {children}
         </Providers>
       </body>
