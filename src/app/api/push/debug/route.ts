@@ -8,11 +8,18 @@ import { firebaseInitError, firebaseInitialized } from "@/lib/push"
 export async function GET() {
   try {
     const fcmSubs = await prisma.pushSubscription.findMany({
-      where: { endpoint: { startsWith: "fcm:" } }
+      include: { user: { select: { id: true, name: true, email: true, role: true } } }
     })
     
-    const webCount = await prisma.pushSubscription.count({
-      where: { NOT: { endpoint: { startsWith: "fcm:" } } }
+    const allUsers = await prisma.user.findMany({
+      select: { id: true, name: true, email: true, role: true }
+    })
+
+    const allMeds = await prisma.medication.findMany({
+      include: {
+        elder: { select: { id: true, name: true, email: true } },
+        logs: { take: 5, orderBy: { timestamp: "desc" } }
+      }
     })
 
     const hasFirebaseEnv = !!process.env.FIREBASE_PROJECT_ID && !!process.env.FIREBASE_CLIENT_EMAIL && !!process.env.FIREBASE_PRIVATE_KEY
@@ -22,27 +29,36 @@ export async function GET() {
     
     if (isFirebaseInit) {
       for (const sub of fcmSubs) {
-        try {
-          const token = sub.endpoint.replace("fcm:", "")
-          const message = {
-            data: { type: "DEBUG_PING" },
-            token: token
+        if (sub.endpoint.startsWith("fcm:")) {
+          try {
+            const token = sub.endpoint.replace("fcm:", "")
+            const message = {
+              data: { type: "DEBUG_PING" },
+              token: token
+            }
+            const response = await getMessaging().send(message)
+            testResults.push({ id: sub.id, userId: sub.userId, userName: sub.user?.name, status: "SUCCESS", response })
+          } catch (e: any) {
+            testResults.push({ id: sub.id, userId: sub.userId, userName: sub.user?.name, status: "ERROR", error: e.message })
           }
-          const response = await getMessaging().send(message)
-          testResults.push({ id: sub.id, status: "SUCCESS", response })
-        } catch (e: any) {
-          testResults.push({ id: sub.id, status: "ERROR", error: e.message, code: e.code })
         }
       }
     }
     
     return NextResponse.json({
-      fcmTokens: fcmSubs.length,
-      webTokens: webCount,
-      firebaseEnvFound: hasFirebaseEnv,
+      allUsers,
+      fcmSubs: fcmSubs.map(s => ({ id: s.id, userId: s.userId, userEmail: s.user?.email, userRole: s.user?.role, endpoint: s.endpoint.substring(0, 30) + "..." })),
+      allMeds: allMeds.map(m => ({
+        id: m.id,
+        name: m.name,
+        time: m.time,
+        frequency: m.frequency,
+        elderName: m.elder?.name,
+        elderEmail: m.elder?.email,
+        elderId: m.elderId,
+        recentLogs: m.logs
+      })),
       firebaseInitialized: isFirebaseInit,
-      localStateInit: firebaseInitialized,
-      error: firebaseInitError,
       testResults
     })
   } catch (error: any) {
