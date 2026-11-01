@@ -6,8 +6,11 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
-import android.os.PowerManager;
+import android.media.AudioAttributes;
+import android.media.RingtoneManager;
+import android.net.Uri;
 import android.os.Build;
+import android.os.PowerManager;
 import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
@@ -17,27 +20,23 @@ import com.capacitorjs.plugins.pushnotifications.MessagingService;
 
 public class MyMessagingService extends MessagingService {
 
-    // THROTTLE: Only allow one alarm every 10 seconds to prevent infinite storm
+    // THROTTLE: Only allow one alarm every 8 seconds to prevent duplicate storm
     private static long lastAlarmTime = 0;
-    private static final long ALARM_COOLDOWN_MS = 10000; // 10 seconds
+    private static final long ALARM_COOLDOWN_MS = 8000;
 
     @Override
     public void onMessageReceived(RemoteMessage remoteMessage) {
         
         if (remoteMessage.getData().size() > 0 && "ALARM".equals(remoteMessage.getData().get("type"))) {
             
-            // THROTTLE CHECK: Skip if we already fired an alarm in the last 10 seconds
             long now = System.currentTimeMillis();
             if (now - lastAlarmTime < ALARM_COOLDOWN_MS) {
                 Log.e("ALARM_DEBUG", "THROTTLED - Skipping duplicate alarm (fired " + (now - lastAlarmTime) + "ms ago)");
-                return; // DO NOT call super, DO NOT fire another alarm
+                return;
             }
             lastAlarmTime = now;
             
-            Log.e("ALARM_DEBUG", "FCM ALARM RECEIVED - PROCESSING (single fire)");
-            
-            // DO NOT call super.onMessageReceived() for ALARM type messages!
-            // The parent Capacitor MessagingService re-dispatches the message and causes duplicates.
+            Log.e("ALARM_DEBUG", "FCM ALARM RECEIVED - FIRING AGGRESSIVE WAKEUP");
             
             String label = remoteMessage.getData().get("label");
             if (label == null) label = "EMERGENCY ALARM";
@@ -57,19 +56,24 @@ public class MyMessagingService extends MessagingService {
             if (actionText == null) actionText = "TAKE MEDICINE / STOP ALARM";
 
             try {
-                // ACQUIRE WAKE LOCK TO FORCE CPU AWAKE
+                // 1. FORCE THE CPU AND SCREEN AWAKE
                 PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
                 if (powerManager != null) {
                     PowerManager.WakeLock wakeLock = powerManager.newWakeLock(
-                        PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, 
-                        "ElderSaath::AlarmWakeLock"
+                        PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE, 
+                        "ElderSaath::HyperAlarmWakeLock"
                     );
                     wakeLock.acquire(3 * 60 * 1000L); // 3 minutes
                 }
                 
-                // Create notification channel
+                // 2. High-Priority Alarm Notification Channel
                 NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
                 String channelId = "whatsapp_style_alarms";
+                Uri alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+                if (alarmSound == null) {
+                    alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+                }
+                long[] vibrationPattern = new long[]{0, 1000, 500, 1000, 500, 1000};
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     NotificationChannel channel = new NotificationChannel(
@@ -77,11 +81,20 @@ public class MyMessagingService extends MessagingService {
                             "Emergency Alarms",
                             NotificationManager.IMPORTANCE_HIGH
                     );
+                    channel.setDescription("Critical life-saving medication and SOS alarms");
                     channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
                     channel.setBypassDnd(true);
+                    channel.enableVibration(true);
+                    channel.setVibrationPattern(vibrationPattern);
+                    AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ALARM)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build();
+                    channel.setSound(alarmSound, audioAttributes);
                     notificationManager.createNotificationChannel(channel);
                 }
 
+                // 3. Prepare Full-Screen Intent
                 Intent fullScreenIntent = new Intent(this, AlarmActivity.class);
                 fullScreenIntent.putExtra("label", label);
                 fullScreenIntent.putExtra("body", body);
@@ -89,10 +102,18 @@ public class MyMessagingService extends MessagingService {
                 fullScreenIntent.putExtra("actionText", actionText);
                 fullScreenIntent.putExtra("snoozeDuration", snoozeDuration);
                 boolean showSticky = true;
-                if (remoteMessage.getData().containsKey("stickyNotification")) { if ("false".equals(remoteMessage.getData().get("stickyNotification"))) showSticky = false; }
+                if (remoteMessage.getData().containsKey("stickyNotification")) {
+                    if ("false".equals(remoteMessage.getData().get("stickyNotification"))) showSticky = false;
+                }
                 fullScreenIntent.putExtra("stickyNotification", showSticky);
                 if (elderId != null) fullScreenIntent.putExtra("elderId", elderId);
-                fullScreenIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                
+                fullScreenIntent.setFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK | 
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP | 
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP |
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                );
 
                 int flags = PendingIntent.FLAG_UPDATE_CURRENT;
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -103,7 +124,6 @@ public class MyMessagingService extends MessagingService {
                         this, 0, fullScreenIntent, flags
                 );
 
-                // Use a FIXED notification ID so duplicates just replace each other instead of stacking
                 int ALARM_NOTIFICATION_ID = 99999;
 
                 NotificationCompat.Builder builder = new NotificationCompat.Builder(this, channelId)
@@ -112,6 +132,9 @@ public class MyMessagingService extends MessagingService {
                         .setContentText(label)
                         .setPriority(NotificationCompat.PRIORITY_MAX)
                         .setCategory(NotificationCompat.CATEGORY_ALARM)
+                        .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                        .setSound(alarmSound)
+                        .setVibrate(vibrationPattern)
                         .setFullScreenIntent(fullScreenPendingIntent, true)
                         .setAutoCancel(true)
                         .setOngoing(showSticky);
@@ -119,12 +142,17 @@ public class MyMessagingService extends MessagingService {
                 notificationManager.notify(ALARM_NOTIFICATION_ID, builder.build());
                 Log.e("ALARM_DEBUG", "Notification Fired with FullScreenIntent! Sticky: " + showSticky);
                 
-                // FORCE the Activity to start directly (needs SYSTEM_ALERT_WINDOW permission)
+                // 4. AGGRESSIVELY FORCE LAUNCH ACTIVITY DIRECTLY
                 try {
                     startActivity(fullScreenIntent);
-                    Log.e("ALARM_DEBUG", "Forced startActivity called directly!");
-                } catch (Exception e) {
-                    Log.e("ALARM_DEBUG", "Could not force startActivity: " + e.getMessage());
+                    Log.e("ALARM_DEBUG", "Direct startActivity succeeded!");
+                } catch (Exception e1) {
+                    try {
+                        getApplicationContext().startActivity(fullScreenIntent);
+                        Log.e("ALARM_DEBUG", "ApplicationContext startActivity succeeded!");
+                    } catch (Exception e2) {
+                        Log.e("ALARM_DEBUG", "Could not force background startActivity: " + e2.getMessage());
+                    }
                 }
                 
             } catch (Exception e) {
@@ -132,9 +160,8 @@ public class MyMessagingService extends MessagingService {
                 e.printStackTrace();
             }
         } else {
-            // For non-alarm messages (regular notifications), let Capacitor handle it normally
             super.onMessageReceived(remoteMessage);
-            android.util.Log.e("ALARM_DEBUG", "Received normal push, passed to Capacitor.");
+            Log.e("ALARM_DEBUG", "Received normal push, passed to Capacitor.");
         }
     }
 }
