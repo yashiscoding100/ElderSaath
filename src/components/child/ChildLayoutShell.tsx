@@ -31,7 +31,6 @@ const NAV_ITEMS = [
   { name: "Health Analytics", href: "/child/health", icon: Activity },
   { name: "Medications", href: "/child/medications", icon: Pill },
   { name: "Things to Do", href: "/child/tasks", icon: ListTodo },
-  { name: "Reports", href: "/child/reports", icon: FileText },
   { name: "Documents", href: "/child/documents", icon: Files },
   { name: "Test Reports", href: "/child/lab-reports", icon: FlaskConical },
     { name: "Care Team", href: "/child/team", icon: Users },
