@@ -87,62 +87,48 @@ public class AlarmActivity extends Activity {
         String snoozeText = getIntent().getStringExtra("snoozeText");
         if (snoozeText == null || snoozeText.isEmpty()) snoozeText = "I'll take the medicines later";
         
-        final int snoozeDuration = getIntent().getIntExtra("snoozeDuration", 10);
+        int parsedSnooze = 10;
+        try {
+            if (getIntent().hasExtra("snoozeDuration")) {
+                Object obj = getIntent().getExtras().get("snoozeDuration");
+                if (obj instanceof Integer) {
+                    parsedSnooze = (Integer) obj;
+                } else if (obj instanceof String) {
+                    parsedSnooze = Integer.parseInt((String) obj);
+                }
+            }
+        } catch (Exception ignored) {}
+        final int snoozeDuration = parsedSnooze;
+
         final String elderId = getIntent().getStringExtra("elderId");
 
-        // 4. Build Fullscreen High-Contrast UI
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        
-        android.graphics.drawable.GradientDrawable bgGrad = new android.graphics.drawable.GradientDrawable(
-            android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
-            new int[] {Color.parseColor("#0F172A"), Color.parseColor("#1E1B4B")}
-        );
-        layout.setBackground(bgGrad);
-        layout.setGravity(Gravity.CENTER);
-        layout.setPadding(60, 60, 60, 60);
+        // 4. Set Clean, Responsive XML Layout
+        setContentView(R.layout.activity_alarm);
 
-        TextView alertBadge = new TextView(this);
-        alertBadge.setText("⏰ ELDERSAATH ALARM");
-        alertBadge.setTextSize(14);
-        alertBadge.setTextColor(Color.parseColor("#38BDF8"));
-        alertBadge.setGravity(Gravity.CENTER);
-        alertBadge.setPadding(0, 0, 0, 20);
+        TextView alertBadge = findViewById(R.id.tvAlarmBadge);
+        TextView iconView = findViewById(R.id.tvAlarmIcon);
+        TextView titleView = findViewById(R.id.tvAlarmTitle);
+        TextView bodyView = findViewById(R.id.tvAlarmBody);
+        Button stopBtn = findViewById(R.id.btnStopAlarm);
+        Button snoozeBtn = findViewById(R.id.btnSnoozeAlarm);
 
-        TextView titleView = new TextView(this);
+        if (label.contains("SOS") || label.contains("EMERGENCY")) {
+            iconView.setText("🚨");
+            alertBadge.setText("🚨 EMERGENCY SOS ACTIVE!");
+        } else {
+            iconView.setText("⏰");
+            alertBadge.setText("⏰ MEDICATION REMINDER");
+        }
+
         titleView.setText(label);
-        titleView.setTextSize(28);
-        titleView.setTextColor(Color.WHITE);
-        titleView.setGravity(Gravity.CENTER);
-        titleView.setTypeface(null, android.graphics.Typeface.BOLD);
-        titleView.setPadding(0, 0, 0, 20);
-
-        TextView bodyView = new TextView(this);
         bodyView.setText(body);
-        bodyView.setTextSize(18);
-        bodyView.setTextColor(Color.parseColor("#E2E8F0"));
-        bodyView.setGravity(Gravity.CENTER);
-        bodyView.setPadding(0, 0, 0, 60);
-
-        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        );
-        btnParams.setMargins(0, 0, 0, 30);
-
-        // STOP / TAKE MEDICINE BUTTON
-        Button stopBtn = new Button(this);
         stopBtn.setText(actionText.toUpperCase());
-        stopBtn.setTextSize(17);
-        stopBtn.setTypeface(null, android.graphics.Typeface.BOLD);
-        android.graphics.drawable.GradientDrawable stopBg = new android.graphics.drawable.GradientDrawable();
-        stopBg.setColor(Color.parseColor("#10B981")); // Emerald Green
-        stopBg.setCornerRadius(24);
-        stopBtn.setBackground(stopBg);
-        stopBtn.setTextColor(Color.WHITE);
-        stopBtn.setPadding(30, 45, 30, 45);
-        stopBtn.setLayoutParams(btnParams);
-        stopBtn.setElevation(10);
+
+        String displaySnooze = snoozeText;
+        if (!displaySnooze.toLowerCase().contains("min") && !displaySnooze.toLowerCase().contains("m)")) {
+            displaySnooze = displaySnooze + " (" + snoozeDuration + " mins)";
+        }
+        snoozeBtn.setText(displaySnooze);
 
         stopBtn.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -151,19 +137,6 @@ public class AlarmActivity extends Activity {
                 finish();
             }
         });
-
-        // SNOOZE BUTTON
-        Button snoozeBtn = new Button(this);
-        snoozeBtn.setText(snoozeText);
-        snoozeBtn.setTextSize(16);
-        snoozeBtn.setTypeface(null, android.graphics.Typeface.BOLD);
-        android.graphics.drawable.GradientDrawable snoozeBg = new android.graphics.drawable.GradientDrawable();
-        snoozeBg.setColor(Color.parseColor("#F97316")); // Bright Orange
-        snoozeBg.setCornerRadius(24);
-        snoozeBtn.setBackground(snoozeBg);
-        snoozeBtn.setTextColor(Color.WHITE);
-        snoozeBtn.setPadding(30, 35, 30, 35);
-        snoozeBtn.setLayoutParams(btnParams);
 
         final String finalActionText = actionText;
         final String finalLabel = label;
@@ -238,13 +211,6 @@ public class AlarmActivity extends Activity {
                 finish();
             }
         });
-
-        layout.addView(alertBadge);
-        layout.addView(titleView);
-        layout.addView(bodyView);
-        layout.addView(snoozeBtn);
-        layout.addView(stopBtn);
-        setContentView(layout);
 
         // 5. Start Continuous Sound and Aggressive Vibration
         startAlarmSoundAndVibration();

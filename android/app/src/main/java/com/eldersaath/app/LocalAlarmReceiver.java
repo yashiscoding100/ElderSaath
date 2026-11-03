@@ -65,7 +65,7 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
         alarmIntent.putExtra("body", "Dosage: " + dosage + (instructions != null && !instructions.isEmpty() ? ". " + instructions : ""));
         alarmIntent.putExtra("actionText", "TAKE MEDICINE / STOP ALARM");
         alarmIntent.putExtra("snoozeText", "Take later");
-        alarmIntent.putExtra("snoozeDuration", "10");
+        alarmIntent.putExtra("snoozeDuration", 10);
         alarmIntent.putExtra("elderId", elderId);
         alarmIntent.putExtra("medicationId", medicationId);
         alarmIntent.putExtra("stickyNotification", true);

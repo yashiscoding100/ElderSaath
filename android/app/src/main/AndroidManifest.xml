@@ -38,7 +38,7 @@
             android:inheritShowWhenLocked="true"
             android:launchMode="singleInstance"
             android:excludeFromRecents="true"
-            android:theme="@style/AppTheme.NoActionBarLaunch" />
+            android:theme="@style/AlarmActivityTheme" />
 
         <!-- Force Android to ignore Capacitor's MessagingService and ONLY use ours -->
         <service android:name="com.capacitorjs.plugins.pushnotifications.MessagingService" tools:node="remove" />
