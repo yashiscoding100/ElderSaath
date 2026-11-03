@@ -203,26 +203,33 @@ export default async function ElderHome() {
         <MedicalProfileCard initialProfile={profile} />
 
         <a href="/elder/team" className="mt-6 block w-full bg-slate-800 text-white rounded-2xl p-6 text-left shadow-sm hover:shadow-md transition-all transform hover:-translate-y-1 flex items-center justify-between border border-slate-700"><div><h2 className="text-xl font-bold">Helpers &amp; Team</h2><p className="text-sm font-medium text-slate-300 mt-1">Call maids, nurses, and drivers</p></div><div className="w-12 h-12 bg-slate-700 rounded-full flex items-center justify-center text-xl">CALL</div></a>{/* Historical Health Trends */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-            <a href="/elder/health" className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-3">
-              <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center"><Activity className="w-6 h-6" /></div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+            <a href="/elder/health" className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-2.5">
+              <div className="w-11 h-11 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center"><Activity className="w-5 h-5" /></div>
               <div>
-                <h2 className="font-bold text-slate-900">Health History</h2>
-                <p className="text-sm text-slate-500 mt-1">Graphs & Vitals Table</p>
+                <h2 className="font-bold text-slate-900 text-sm sm:text-base">Health History</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Graphs & Vitals</p>
               </div>
             </a>
-            <a href="/elder/documents" className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-3">
-              <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+            <a href="/elder/documents" className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-2.5">
+              <div className="w-11 h-11 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg></div>
               <div>
-                <h2 className="font-bold text-slate-900">Medical Vault</h2>
-                <p className="text-sm text-slate-500 mt-1">Upload & View Documents</p>
+                <h2 className="font-bold text-slate-900 text-sm sm:text-base">Prescriptions</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Vault & Records</p>
               </div>
             </a>
-            <a href="/elder/reports" className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-3">
-              <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 22v-4a2 2 0 1 0-4 0v4"/><path d="m18 10 4 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-8l4-2"/><path d="M18 5v17"/><path d="m4 6 8-4 8 4"/><path d="M6 5v17"/><circle cx="12" cy="9" r="2"/></svg></div>
+            <a href="/elder/lab-reports" className="bg-emerald-50/70 rounded-2xl p-5 shadow-sm border border-emerald-300 hover:shadow-md hover:bg-emerald-100/60 transition-all flex flex-col items-center justify-center text-center gap-2.5 group">
+              <div className="w-11 h-11 bg-emerald-600 text-white rounded-full flex items-center justify-center text-xl shadow-sm group-hover:scale-105 transition-transform">??</div>
               <div>
-                <h2 className="font-bold text-slate-900">AI Health Reports</h2>
-                <p className="text-sm text-slate-500 mt-1">Weekly AI Summaries</p>
+                <h2 className="font-bold text-emerald-950 text-sm sm:text-base">Test Reports</h2>
+                <p className="text-xs text-emerald-700 font-semibold mt-0.5">Blood, ECG, Scans</p>
+              </div>
+            </a>
+            <a href="/elder/reports" className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-2.5">
+              <div className="w-11 h-11 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 22v-4a2 2 0 1 0-4 0v4"/><path d="m18 10 4 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-8l4-2"/><path d="M18 5v17"/><path d="m4 6 8-4 8 4"/><path d="M6 5v17"/><circle cx="12" cy="9" r="2"/></svg></div>
+              <div>
+                <h2 className="font-bold text-slate-900 text-sm sm:text-base">AI Reports</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Weekly Analytics</p>
               </div>
             </a>
           </div>
