@@ -163,6 +163,10 @@ public class MyMessagingService extends MessagingService {
                 }
                 fullScreenIntent.putExtra("stickyNotification", showSticky);
                 if (elderId != null) fullScreenIntent.putExtra("elderId", elderId);
+                String medicationId = remoteMessage.getData().get("medicationId");
+                if (medicationId != null) fullScreenIntent.putExtra("medicationId", medicationId);
+                String alarmType = remoteMessage.getData().get("type");
+                if (alarmType != null) fullScreenIntent.putExtra("type", alarmType);
                 
                 fullScreenIntent.setFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK | 
@@ -185,6 +189,9 @@ public class MyMessagingService extends MessagingService {
                 // Stop Intent for notification action button and swipe-to-dismiss delete intent
                 Intent stopIntent = new Intent(this, LocalAlarmReceiver.class);
                 stopIntent.setAction(LocalAlarmReceiver.ACTION_STOP_ALARM);
+                if (medicationId != null) stopIntent.putExtra("medicationId", medicationId);
+                if (elderId != null) stopIntent.putExtra("elderId", elderId);
+                if (alarmType != null) stopIntent.putExtra("type", alarmType);
                 PendingIntent stopPendingIntent = PendingIntent.getBroadcast(
                     this,
                     99125,

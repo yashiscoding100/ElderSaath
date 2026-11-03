@@ -6,6 +6,7 @@ import { ArrowLeft } from "lucide-react"
 import { ElderAddMedicationForm } from "./ElderAddMedicationForm"
 import { MarkTakenButton } from "./MarkTakenButton"
 import { ElderDeleteMedicationButton } from "./ElderDeleteMedicationButton"
+import { MedicationsPageRefresher } from "./MedicationsPageRefresher"
 
 export default async function ElderMedications() {
   const session = await auth()
@@ -36,6 +37,7 @@ export default async function ElderMedications() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center p-6">
+      <MedicationsPageRefresher />
       <div className="w-full max-w-md bg-white p-6 rounded-3xl shadow-sm mb-6 text-center relative">
         <Link href="/elder/home" className="absolute left-4 top-4 p-2.5 bg-slate-100 hover:bg-slate-200 rounded-full transition text-slate-700 shadow-sm" title="Back to Home">
           <ArrowLeft className="w-6 h-6" />

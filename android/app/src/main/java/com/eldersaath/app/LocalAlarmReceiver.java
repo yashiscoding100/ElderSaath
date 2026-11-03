@@ -27,6 +27,12 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
         if (ACTION_STOP_ALARM.equals(action)) {
             Log.i(TAG, "Notification STOP or swipe-dismiss action triggered. Stopping all alarm audio.");
             AlarmActivity.stopCurrentAlarm(context);
+            String medId = intent.getStringExtra("medicationId");
+            String elderId = intent.getStringExtra("elderId");
+            String type = intent.getStringExtra("type");
+            if (medId != null && !medId.isEmpty()) {
+                AlarmActivity.markMedicationOrTaskTaken(context, medId, elderId, type);
+            }
             return;
         }
 
@@ -153,6 +159,9 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
         // Stop Intent for notification action button and swipe-to-dismiss delete intent
         Intent stopIntent = new Intent(context, LocalAlarmReceiver.class);
         stopIntent.setAction(ACTION_STOP_ALARM);
+        stopIntent.putExtra("medicationId", medicationId);
+        stopIntent.putExtra("elderId", elderId);
+        stopIntent.putExtra("type", type);
         PendingIntent stopPendingIntent = PendingIntent.getBroadcast(
             context,
             requestCode + 50000,

@@ -62,6 +62,30 @@ export function MedicationAlarmSync() {
       const capacitor = (window as any).Capacitor
       const AlarmSyncPlugin = capacitor?.Plugins?.AlarmSyncPlugin
 
+      // Flush any pending taken medications logged by native AlarmActivity
+      if (AlarmSyncPlugin && typeof AlarmSyncPlugin.getPendingTakenMedications === "function") {
+        try {
+          const pendingRes = await AlarmSyncPlugin.getPendingTakenMedications()
+          const pendingIds: string[] = pendingRes?.pendingIds || []
+          for (const pId of pendingIds) {
+            try {
+              const res = await fetch("/api/medications/log", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ medicationId: pId, status: "TAKEN" }),
+              })
+              if (res.ok && typeof AlarmSyncPlugin.clearPendingTakenMedication === "function") {
+                await AlarmSyncPlugin.clearPendingTakenMedication({ medicationId: pId })
+              }
+            } catch (pErr) {
+              console.warn("[MedicationAlarmSync] Flush pending med error:", pErr)
+            }
+          }
+        } catch (e) {
+          console.warn("[MedicationAlarmSync] getPendingTakenMedications error:", e)
+        }
+      }
+
       if (AlarmSyncPlugin && typeof AlarmSyncPlugin.syncAlarms === "function") {
         try {
           const syncResult = await AlarmSyncPlugin.syncAlarms({ medications: alarmItems })

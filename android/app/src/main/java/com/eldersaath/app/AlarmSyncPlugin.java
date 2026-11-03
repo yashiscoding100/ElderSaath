@@ -6,6 +6,8 @@ import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Build;
 import android.util.Log;
+import java.util.HashSet;
+import java.util.Set;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -38,6 +40,41 @@ public class AlarmSyncPlugin extends Plugin {
         } catch (Exception e) {
             Log.e(TAG, "Failed to sync alarms", e);
             call.reject("Failed to sync alarms: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void getPendingTakenMedications(PluginCall call) {
+        try {
+            SharedPreferences prefs = getContext().getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+            Set<String> pending = prefs.getStringSet("pending_taken_med_ids", new HashSet<String>());
+            JSArray arr = new JSArray();
+            for (String id : pending) {
+                arr.put(id);
+            }
+            JSObject ret = new JSObject();
+            ret.put("pendingIds", arr);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Error getting pending taken medications: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void clearPendingTakenMedication(PluginCall call) {
+        try {
+            String medicationId = call.getString("medicationId");
+            if (medicationId != null) {
+                SharedPreferences prefs = getContext().getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+                Set<String> pending = new HashSet<>(prefs.getStringSet("pending_taken_med_ids", new HashSet<String>()));
+                pending.remove(medicationId);
+                prefs.edit().putStringSet("pending_taken_med_ids", pending).apply();
+            }
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Error clearing pending medication: " + e.getMessage());
         }
     }
 

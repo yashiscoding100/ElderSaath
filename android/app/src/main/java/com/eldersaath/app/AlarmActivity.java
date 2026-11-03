@@ -6,6 +6,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
@@ -20,9 +21,20 @@ import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.webkit.CookieManager;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
+import java.util.Set;
 
 public class AlarmActivity extends Activity {
     private static final String TAG = "AlarmActivity";
@@ -50,32 +62,51 @@ public class AlarmActivity extends Activity {
         }
     }
 
+    public static void stopActiveAlarmSound(Context context) {
+        try {
+            if (currentInstance != null) {
+                currentInstance.stopAlarmAndSound();
+                currentInstance.finish();
+                currentInstance = null;
+            }
+            if (context != null) {
+                NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+                if (nm != null) {
+                    nm.cancel(99999);
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "stopActiveAlarmSound warning", e);
+        }
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         currentInstance = this;
 
-        // 1. Force the screen ON and display cleanly over Samsung lockscreen
+        // 1. Force Screen ON and Show Over Lockscreen
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true);
             setTurnScreenOn(true);
         }
-
         getWindow().addFlags(
             WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
+            WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD |
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
             WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON |
-            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+            WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON
         );
 
-        // 2. Keep CPU and Screen awake while alarm is ringing
+        // 2. CPU WakeLock for duration of alarm
         try {
-            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-            if (pm != null) {
-                wakeLock = pm.newWakeLock(
+            PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (powerManager != null) {
+                wakeLock = powerManager.newWakeLock(
                     PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE,
-                    "ElderSaath::AlarmActivityWake"
+                    "ElderSaath::AlarmActivityWakeLock"
                 );
-                wakeLock.acquire(5 * 60 * 1000L); // 5 mins max
+                wakeLock.acquire(3 * 60 * 1000L); // 3 minutes timeout
             }
         } catch (Exception ignored) {}
 
@@ -105,7 +136,38 @@ public class AlarmActivity extends Activity {
         } catch (Exception ignored) {}
         final int snoozeDuration = parsedSnooze;
 
-        final String elderId = getIntent().getStringExtra("elderId");
+        String elderId = getIntent().getStringExtra("elderId");
+        if (elderId == null || elderId.isEmpty()) {
+            SharedPreferences prefs = getSharedPreferences("ElderSaathAlarms", Context.MODE_PRIVATE);
+            elderId = prefs.getString("elder_id", "");
+        }
+
+        String medicationId = getIntent().getStringExtra("medicationId");
+        String alarmType = getIntent().getStringExtra("type");
+
+        // If medicationId wasn't passed directly, look it up in cached alarms
+        if ((medicationId == null || medicationId.isEmpty()) && label != null) {
+            try {
+                SharedPreferences prefs = getSharedPreferences("ElderSaathAlarms", Context.MODE_PRIVATE);
+                String cachedMeds = prefs.getString("cached_alarms_json", "");
+                if (cachedMeds != null && !cachedMeds.isEmpty()) {
+                    JSONArray arr = new JSONArray(cachedMeds);
+                    for (int i = 0; i < arr.length(); i++) {
+                        JSONObject obj = arr.getJSONObject(i);
+                        String name = obj.optString("name", "");
+                        if (!name.isEmpty() && label.contains(name)) {
+                            medicationId = obj.optString("id");
+                            if (alarmType == null) alarmType = obj.optString("type", "MEDICATION");
+                            break;
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
+        final String finalMedicationId = medicationId;
+        final String finalElderId = elderId;
+        final String finalAlarmType = alarmType != null ? alarmType : "MEDICATION";
 
         // 4. Set Clean, Responsive XML Layout
         setContentView(R.layout.activity_alarm);
@@ -117,11 +179,10 @@ public class AlarmActivity extends Activity {
         Button stopBtn = findViewById(R.id.btnStopAlarm);
         Button snoozeBtn = findViewById(R.id.btnSnoozeAlarm);
 
-        String alarmType = getIntent().getStringExtra("type");
         if (label.contains("SOS") || label.contains("EMERGENCY")) {
             iconView.setText("🚨");
             alertBadge.setText("🚨 EMERGENCY SOS ACTIVE!");
-        } else if ("TASK".equalsIgnoreCase(alarmType) || label.toLowerCase().startsWith("task")) {
+        } else if ("TASK".equalsIgnoreCase(finalAlarmType) || label.toLowerCase().startsWith("task")) {
             iconView.setText("📋");
             alertBadge.setText("📋 SCHEDULED TASK REMINDER");
         } else {
@@ -144,6 +205,13 @@ public class AlarmActivity extends Activity {
             @Override
             public void onClick(View v) {
                 stopAlarmAndSound();
+                if ("TASK".equalsIgnoreCase(finalAlarmType)) {
+                    markMedicationOrTaskTaken(AlarmActivity.this, finalMedicationId, finalElderId, "TASK");
+                    Toast.makeText(AlarmActivity.this, "✓ Task completed!", Toast.LENGTH_SHORT).show();
+                } else {
+                    markMedicationOrTaskTaken(AlarmActivity.this, finalMedicationId, finalElderId, "MEDICATION");
+                    Toast.makeText(AlarmActivity.this, "✓ Medicine marked as taken!", Toast.LENGTH_SHORT).show();
+                }
                 finish();
             }
         };
@@ -163,7 +231,6 @@ public class AlarmActivity extends Activity {
         final String finalLabel = label;
         final String finalBody = body;
         final String finalSnoozeText = snoozeText;
-        final String finalElderId = elderId;
         
         View.OnClickListener snoozeClickListener = new View.OnClickListener() {
             @Override
@@ -176,59 +243,27 @@ public class AlarmActivity extends Activity {
                 snoozeIntent.putExtra("body", finalBody);
                 snoozeIntent.putExtra("snoozeText", finalSnoozeText);
                 snoozeIntent.putExtra("snoozeDuration", snoozeDuration);
+                snoozeIntent.putExtra("medicationId", finalMedicationId);
+                snoozeIntent.putExtra("type", finalAlarmType);
                 if (finalElderId != null) snoozeIntent.putExtra("elderId", finalElderId);
                 
-                if (finalElderId != null) {
-                    new Thread(new Runnable() {
-                        @Override
-                        public void run() {
-                            try {
-                                java.net.URL url = new java.net.URL("https://eldersaath.vercel.app/api/alarms/snooze");
-                                java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
-                                conn.setRequestMethod("POST");
-                                conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-                                conn.setDoOutput(true);
-                                String jsonInputString = "{\"elderId\": \"" + finalElderId + "\"}";
-                                java.io.OutputStream os = conn.getOutputStream();
-                                byte[] input = jsonInputString.getBytes("utf-8");
-                                os.write(input, 0, input.length);
-                                os.flush();
-                                os.close();
-                                conn.getResponseCode();
-                            } catch (Exception ignored) {}
-                        }
-                    }).start();
-                }
-                
-                snoozeIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                
                 int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    flags |= PendingIntent.FLAG_IMMUTABLE;
-                }
-                
-                PendingIntent pendingIntent = PendingIntent.getActivity(
-                    AlarmActivity.this, 
-                    (int)System.currentTimeMillis(), 
-                    snoozeIntent, 
-                    flags
-                );
-                
-                AlarmManager alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
-                long snoozeTime = System.currentTimeMillis() + (snoozeDuration * 60 * 1000L);
-                
-                try {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, snoozeTime, pendingIntent);
-                    } else {
-                        alarmManager.setExact(AlarmManager.RTC_WAKEUP, snoozeTime, pendingIntent);
-                    }
-                    Toast.makeText(AlarmActivity.this, "Snoozed! Waking you up again in " + snoozeDuration + " mins.", Toast.LENGTH_LONG).show();
-                } catch (SecurityException e) {
-                    alarmManager.set(AlarmManager.RTC_WAKEUP, snoozeTime, pendingIntent);
-                    Toast.makeText(AlarmActivity.this, "Snoozed for " + snoozeDuration + " mins.", Toast.LENGTH_LONG).show();
-                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) flags |= PendingIntent.FLAG_IMMUTABLE;
 
+                int reqCode = (int) (System.currentTimeMillis() % 100000);
+                PendingIntent pi = PendingIntent.getActivity(AlarmActivity.this, reqCode, snoozeIntent, flags);
+                AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+                long triggerAt = System.currentTimeMillis() + (snoozeDuration * 60 * 1000L);
+
+                if (am != null) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+                    } else {
+                        am.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+                    }
+                }
+                
+                Toast.makeText(AlarmActivity.this, "Alarm snoozed for " + snoozeDuration + " minutes", Toast.LENGTH_LONG).show();
                 finish();
             }
         };
@@ -246,6 +281,81 @@ public class AlarmActivity extends Activity {
 
         // 5. Start Single Continuous Sound and Aggressive Vibration
         startAlarmSoundAndVibration();
+    }
+
+    /**
+     * Records medication or task as taken in local offline storage AND synchronizes with the server.
+     */
+    public static void markMedicationOrTaskTaken(final Context context, final String medId, final String elderId, final String type) {
+        if (context == null || medId == null || medId.trim().isEmpty()) {
+            Log.w("ALARM_DEBUG", "Cannot mark taken: medId is null or empty");
+            return;
+        }
+
+        // 1. Store in local SharedPreferences pending queue so it's guaranteed to sync even when offline
+        try {
+            SharedPreferences prefs = context.getSharedPreferences("ElderSaathAlarms", Context.MODE_PRIVATE);
+            Set<String> pending = new HashSet<>(prefs.getStringSet("pending_taken_med_ids", new HashSet<String>()));
+            pending.add(medId);
+            prefs.edit().putStringSet("pending_taken_med_ids", pending).apply();
+            Log.i("ALARM_DEBUG", "Added medId to local pending taken list: " + medId);
+        } catch (Exception e) {
+            Log.w("ALARM_DEBUG", "Error saving to pending_taken_med_ids", e);
+        }
+
+        // 2. Fire asynchronous background network request to server
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                HttpURLConnection conn = null;
+                try {
+                    URL url = new URL("https://eldersaath.vercel.app/api/medications/log");
+                    conn = (HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                    conn.setRequestProperty("x-app-alarm-secret", "ElderSaath-Hardware-Alarm-v1");
+                    
+                    try {
+                        String cookie = CookieManager.getInstance().getCookie("https://eldersaath.vercel.app");
+                        if (cookie != null && !cookie.isEmpty()) {
+                            conn.setRequestProperty("Cookie", cookie);
+                        }
+                    } catch (Exception ignored) {}
+
+                    conn.setConnectTimeout(10000);
+                    conn.setReadTimeout(10000);
+                    conn.setDoOutput(true);
+
+                    JSONObject payload = new JSONObject();
+                    payload.put("medicationId", medId);
+                    if (elderId != null && !elderId.isEmpty()) {
+                        payload.put("elderId", elderId);
+                    }
+                    payload.put("status", "TAKEN");
+                    payload.put("type", type != null ? type : "MEDICATION");
+
+                    OutputStream os = conn.getOutputStream();
+                    os.write(payload.toString().getBytes(StandardCharsets.UTF_8));
+                    os.flush();
+                    os.close();
+
+                    int code = conn.getResponseCode();
+                    Log.i("ALARM_DEBUG", "Medication/Task logged to server successfully! HTTP Response: " + code);
+
+                    if (code >= 200 && code < 300) {
+                        // Cleared from pending list since server confirmed receipt
+                        SharedPreferences p = context.getSharedPreferences("ElderSaathAlarms", Context.MODE_PRIVATE);
+                        Set<String> pend = new HashSet<>(p.getStringSet("pending_taken_med_ids", new HashSet<String>()));
+                        pend.remove(medId);
+                        p.edit().putStringSet("pending_taken_med_ids", pend).apply();
+                    }
+                } catch (Exception e) {
+                    Log.w("ALARM_DEBUG", "Network log call failed (will be synced when app opens / comes online): " + e.getMessage());
+                } finally {
+                    if (conn != null) conn.disconnect();
+                }
+            }
+        }).start();
     }
 
     private void startAlarmSoundAndVibration() {
