@@ -25,6 +25,17 @@ export default function SOSPage() {
       .catch(() => {})
   }, [])
 
+  const triggerDirectCall = (phoneToCall: string) => {
+    const cap = (typeof window !== "undefined" ? (window as any).Capacitor : null)
+    if (cap?.isNativePlatform && cap?.Plugins?.AlarmSyncPlugin?.directCall) {
+      cap.Plugins.AlarmSyncPlugin.directCall({ phone: phoneToCall }).catch(() => {
+        window.location.href = `tel:${phoneToCall}`
+      })
+    } else {
+      window.location.href = `tel:${phoneToCall}`
+    }
+  }
+
   const executeSos = async (coords?: { latitude: number, longitude: number }) => {
     try {
       const res = await fetch("/api/sos", {
@@ -40,15 +51,15 @@ export default function SOSPage() {
       const data = await res.json()
       setStatus("🚨 Family alerted with emergency alarm!")
 
-      // Automatically launch dialer if configured
+      // Automatically place call directly via native dialer if configured
       if (callAmbulance) {
         setTimeout(() => {
-          window.location.href = `tel:${ambulanceNumber || "108"}`
+          triggerDirectCall(ambulanceNumber || "108")
         }, 1000)
       }
     } catch (e) {
       setStatus("Failed to send online alert. Calling ambulance directly...")
-      window.location.href = `tel:${ambulanceNumber || "108"}`
+      triggerDirectCall(ambulanceNumber || "108")
     } finally {
       setSending(false)
     }

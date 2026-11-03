@@ -11,11 +11,11 @@ export default async function AdminNoticesPage() {
     prisma.notice.findMany({
       where: {
         NOT: {
-          title: { startsWith: "__" }
+          title: { startsWith: "_" }
         }
       },
       orderBy: { createdAt: "desc" }
-    }),
+    }).then(items => items.filter(n => !n.title.startsWith("_"))),
     getStartupPopupConfig()
   ])
 

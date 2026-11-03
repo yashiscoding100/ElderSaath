@@ -37,9 +37,14 @@ export async function getSosConfig(elderId: string): Promise<SosConfig> {
       if (legacyNotice) {
         notice = await prisma.notice.update({
           where: { id: legacyNotice.id },
-          data: { title: getNoticeTitle(elderId) }
+          data: { title: getNoticeTitle(elderId), isActive: false }
         }).catch(() => legacyNotice)
       }
+    } else if (notice.isActive) {
+      await prisma.notice.update({
+        where: { id: notice.id },
+        data: { isActive: false }
+      }).catch(() => {})
     }
 
     if (!notice || !notice.content) {
@@ -80,14 +85,14 @@ export async function saveSosConfig(elderId: string, partial: Partial<SosConfig>
     if (existing) {
       await prisma.notice.update({
         where: { id: existing.id },
-        data: { content, isActive: true }
+        data: { content, isActive: false }
       })
     } else {
       await prisma.notice.create({
         data: {
           title,
           content,
-          isActive: true
+          isActive: false
         }
       })
     }

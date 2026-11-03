@@ -4,19 +4,30 @@ export async function GlobalNotice() {
   try {
     const activeNotices = await prisma.notice.findMany({
       where: { 
-        isActive: true,
-        NOT: {
-          title: { startsWith: "__" }
-        }
+        isActive: true
       },
       orderBy: { createdAt: "desc" }
     })
 
     if (!activeNotices || activeNotices.length === 0) return null
 
+    // Filter out internal system configs and auto-deactivate them in the DB
+    const userNotices = activeNotices.filter(notice => {
+      if (notice.title.startsWith("_")) {
+        prisma.notice.update({
+          where: { id: notice.id },
+          data: { isActive: false }
+        }).catch(() => {})
+        return false
+      }
+      return true
+    })
+
+    if (userNotices.length === 0) return null
+
     return (
       <div className="w-full space-y-3 mb-6">
-        {activeNotices.map(notice => (
+        {userNotices.map(notice => (
           <div key={notice.id} className="bg-blue-600 text-white p-4 rounded-2xl shadow-lg relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4 opacity-20 text-4xl transform translate-x-2 -translate-y-2">
               📢
@@ -32,4 +43,5 @@ export async function GlobalNotice() {
     return null
   }
 }
+
 

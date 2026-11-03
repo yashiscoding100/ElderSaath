@@ -1,7 +1,10 @@
 package com.eldersaath.app;
 
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.Uri;
+import android.os.Build;
 import android.util.Log;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -67,6 +70,32 @@ public class AlarmSyncPlugin extends Plugin {
         } catch (Exception e) {
             Log.e(TAG, "Failed to sync SOS settings", e);
             call.reject("Failed to sync SOS settings: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void directCall(PluginCall call) {
+        String phone = call.getString("phone", "108");
+        try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || 
+                getContext().checkSelfPermission(android.Manifest.permission.CALL_PHONE) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                Intent callIntent = new Intent(Intent.ACTION_CALL);
+                callIntent.setData(Uri.parse("tel:" + phone));
+                callIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(callIntent);
+                Log.i(TAG, "Direct call placed to " + phone);
+                call.resolve();
+            } else {
+                Intent dialIntent = new Intent(Intent.ACTION_DIAL);
+                dialIntent.setData(Uri.parse("tel:" + phone));
+                dialIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(dialIntent);
+                Log.i(TAG, "ACTION_DIAL fallback opened for " + phone);
+                call.resolve();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to place call", e);
+            call.reject("Failed to place call: " + e.getMessage());
         }
     }
 

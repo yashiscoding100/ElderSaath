@@ -105,17 +105,33 @@ public class SosWidgetProvider extends AppWidgetProvider {
             }
         }
 
-        // 3. Launch Default Phone Dialer to Ambulance (if enabled in settings)
+        // 3. Immediately Place Call to Ambulance via Native Phone Dialer
         if (callAmbulance) {
+            String phone = (ambulanceNumber != null && !ambulanceNumber.trim().isEmpty()) ? ambulanceNumber : "108";
             try {
-                String phone = (ambulanceNumber != null && !ambulanceNumber.trim().isEmpty()) ? ambulanceNumber : "108";
-                Intent dialIntent = new Intent(Intent.ACTION_DIAL);
-                dialIntent.setData(Uri.parse("tel:" + phone));
-                dialIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                context.startActivity(dialIntent);
-                Log.i(TAG, "Dialer opened for ambulance number: " + phone);
+                if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M ||
+                    context.checkSelfPermission(android.Manifest.permission.CALL_PHONE) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    
+                    Intent callIntent = new Intent(Intent.ACTION_CALL);
+                    callIntent.setData(Uri.parse("tel:" + phone));
+                    callIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    context.startActivity(callIntent);
+                    Log.i(TAG, "Direct ambulance call placed immediately to: " + phone);
+                } else {
+                    Intent dialIntent = new Intent(Intent.ACTION_DIAL);
+                    dialIntent.setData(Uri.parse("tel:" + phone));
+                    dialIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    context.startActivity(dialIntent);
+                    Log.i(TAG, "CALL_PHONE not granted, fallback dialer opened for: " + phone);
+                }
             } catch (Exception e) {
-                Log.e(TAG, "Failed to open phone dialer", e);
+                Log.e(TAG, "Failed to place direct call, trying ACTION_DIAL fallback", e);
+                try {
+                    Intent dialIntent = new Intent(Intent.ACTION_DIAL);
+                    dialIntent.setData(Uri.parse("tel:" + phone));
+                    dialIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    context.startActivity(dialIntent);
+                } catch (Exception ignored) {}
             }
         }
 
