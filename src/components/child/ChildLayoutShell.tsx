@@ -35,7 +35,6 @@ const NAV_ITEMS = [
   { name: "Test Reports", href: "/child/lab-reports", icon: FlaskConical },
     { name: "Care Team", href: "/child/team", icon: Users },
   { name: "Emergency Center", href: "/child/emergency", icon: AlertTriangle },
-  { name: "Care Network", href: "/child/care-network", icon: Users },
   { name: "Settings", href: "/child/settings", icon: Settings },
 ]
 
