@@ -107,7 +107,7 @@ export default async function ElderHome() {
             <div>
               <h2 className={`text-xl font-bold ${showHealthCheckAsDone ? 'text-emerald-800' : 'text-white'}`}>Health Check</h2>
               <p className={`text-sm font-medium mt-1 ${showHealthCheckAsDone ? 'text-emerald-600' : 'text-blue-100'}`}>
-                {healthCheckDone ? '? Completed today' : (!isCheckRequiredToday ? 'Rest day, no check needed' : 'Tap here to record vitals')}
+                {healthCheckDone ? '✓ Completed today' : (!isCheckRequiredToday ? 'Rest day, no check needed' : 'Tap here to record vitals')}
               </p>
             </div>
           </a>
@@ -201,7 +201,7 @@ export default async function ElderHome() {
         {/* Medical Profile */}
         <MedicalProfileCard initialProfile={profile} />
 
-        <a href="/elder/team" className="mt-6 block w-full bg-slate-800 text-white rounded-2xl p-6 text-left shadow-sm hover:shadow-md transition-all transform hover:-translate-y-1 flex items-center justify-between border border-slate-700"><div><h2 className="text-xl font-bold">Helpers &amp; Team</h2><p className="text-sm font-medium text-slate-300 mt-1">Call maids, nurses, and drivers</p></div><div className="w-12 h-12 bg-slate-700 rounded-full flex items-center justify-center text-xl">CALL</div></a>{/* Historical Health Trends */}
+        <a href="/elder/team" className="mt-6 block w-full bg-slate-800 text-white rounded-2xl p-6 text-left shadow-sm hover:shadow-md transition-all transform hover:-translate-y-1 flex items-center justify-between border border-slate-700"><div><h2 className="text-xl font-bold">Helpers &amp; Team</h2><p className="text-sm font-medium text-slate-300 mt-1">Call maids, nurses, and drivers</p></div><div className="w-12 h-12 bg-slate-700 rounded-full flex items-center justify-center text-xl">📞</div></a>{/* Historical Health Trends */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
             <a href="/elder/health" className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-2.5">
               <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center"><Activity className="w-6 h-6" /></div>
@@ -218,7 +218,7 @@ export default async function ElderHome() {
               </div>
             </a>
             <a href="/elder/lab-reports" className="bg-emerald-50/80 rounded-2xl p-5 shadow-sm border border-emerald-300 hover:shadow-md hover:bg-emerald-100/60 transition-all flex flex-col items-center justify-center text-center gap-2.5 group">
-              <div className="w-12 h-12 bg-emerald-600 text-white rounded-full flex items-center justify-center text-2xl shadow-sm group-hover:scale-105 transition-transform">??</div>
+              <div className="w-12 h-12 bg-emerald-600 text-white rounded-full flex items-center justify-center text-2xl shadow-sm group-hover:scale-105 transition-transform">🧪</div>
               <div>
                 <h2 className="font-bold text-emerald-950 text-base">Test Reports</h2>
                 <p className="text-xs text-emerald-700 font-semibold mt-0.5">Blood, ECG, Scans</p>

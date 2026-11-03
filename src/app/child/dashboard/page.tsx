@@ -122,7 +122,7 @@ export default async function ChildDashboard() {
           <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
             <Activity className="w-8 h-8 text-blue-600" />
           </div>
-          <h3 className="text-xl font-bold text-slate-900 mb-2">Build Your Care Network</h3>
+          <h3 className="text-xl font-bold text-slate-900 mb-2">Connect Your Family</h3>
           <p className="text-slate-500 max-w-sm mx-auto mb-6">
             Connect with your elderly parents to monitor their real-time health data, medications, and tasks securely.
           </p>

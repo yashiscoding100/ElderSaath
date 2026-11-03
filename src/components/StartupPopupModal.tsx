@@ -22,8 +22,19 @@ export function StartupPopupModal() {
   const [videoCompleted, setVideoCompleted] = useState(false)
 
   useEffect(() => {
-    // Fetch active startup announcement
-    fetch("/api/startup-popup")
+    // Fetch active startup announcement with cache busting and origin resolution
+    const origin = typeof window !== "undefined" ? window.location.origin : ""
+    const baseUrl = (origin && !origin.includes("eldersaath.vercel.app") && !origin.includes("3000"))
+      ? "https://eldersaath.vercel.app"
+      : ""
+
+    fetch(`${baseUrl}/api/startup-popup?t=${Date.now()}`, {
+      cache: "no-store",
+      headers: {
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+      },
+    })
       .then((res) => res.json())
       .then((data) => {
         if (data?.config?.enabled) {
@@ -34,11 +45,17 @@ export function StartupPopupModal() {
           const isLockedInitially = cfg.dismissMode !== "IMMEDIATE"
           setLocked(isLockedInitially)
 
-          const duration = typeof cfg.lockDurationSeconds === "number" && cfg.lockDurationSeconds > 0
-            ? cfg.lockDurationSeconds
-            : (cfg.dismissMode === "TIMER_REQUIRED" ? 10 : 0)
-
-          setRemainingSeconds(duration)
+          // ZERO fallback period for FULL_VIDEO_REQUIRED - must watch full video
+          if (cfg.dismissMode === "FULL_VIDEO_REQUIRED") {
+            setRemainingSeconds(0)
+          } else if (cfg.dismissMode === "TIMER_REQUIRED") {
+            const duration = typeof cfg.lockDurationSeconds === "number" && cfg.lockDurationSeconds > 0
+              ? cfg.lockDurationSeconds
+              : 10
+            setRemainingSeconds(duration)
+          } else {
+            setRemainingSeconds(0)
+          }
         }
       })
       .catch((err) => {
@@ -46,25 +63,22 @@ export function StartupPopupModal() {
       })
   }, [])
 
-  // Handle Countdown Timer
+  // Handle Countdown Timer (Only for TIMER_REQUIRED mode - zero fallback for FULL_VIDEO_REQUIRED)
   useEffect(() => {
     if (!isOpen || !locked || !config) return
+    if (config.dismissMode !== "TIMER_REQUIRED") return
 
-    // If timer is needed
     if (remainingSeconds > 0) {
       const timer = setInterval(() => {
         setRemainingSeconds((prev) => {
           if (prev <= 1) {
             clearInterval(timer)
-            // If timer-required mode or video completion
-            if (config.dismissMode === "TIMER_REQUIRED" || videoCompleted || config.dismissMode === "FULL_VIDEO_REQUIRED") {
-              setLocked(false)
-              if (config.autoCloseOnComplete) {
-                setTimeout(() => {
-                  setIsOpen(false)
-                  setDismissed(true)
-                }, 800)
-              }
+            setLocked(false)
+            if (config.autoCloseOnComplete) {
+              setTimeout(() => {
+                setIsOpen(false)
+                setDismissed(true)
+              }, 800)
             }
             return 0
           }
@@ -73,16 +87,16 @@ export function StartupPopupModal() {
       }, 1000)
 
       return () => clearInterval(timer)
-    } else if (remainingSeconds === 0 && config.dismissMode === "TIMER_REQUIRED") {
+    } else if (remainingSeconds === 0) {
       setLocked(false)
       if (config.autoCloseOnComplete) {
         setIsOpen(false)
         setDismissed(true)
       }
     }
-  }, [isOpen, locked, remainingSeconds, config, videoCompleted])
+  }, [isOpen, locked, remainingSeconds, config])
 
-  // Handle Full Video completion
+  // Handle Full Video completion - STRICT unlock trigger
   const handleVideoEnded = () => {
     setVideoCompleted(true)
     setLocked(false)
@@ -112,7 +126,7 @@ export function StartupPopupModal() {
     }
 
     let player: any = null
-    const onPlayerReady = () => {
+    const initPlayer = () => {
       try {
         if ((window as any).YT && (window as any).YT.Player) {
           player = new (window as any).YT.Player("startup-yt-player-container", {
@@ -132,9 +146,13 @@ export function StartupPopupModal() {
     }
 
     if ((window as any).YT && (window as any).YT.Player) {
-      onPlayerReady()
+      initPlayer()
     } else {
-      ;(window as any).onYouTubeIframeAPIReady = onPlayerReady
+      const prevHandler = (window as any).onYouTubeIframeAPIReady
+      ;(window as any).onYouTubeIframeAPIReady = () => {
+        if (typeof prevHandler === "function") prevHandler()
+        initPlayer()
+      }
     }
 
     return () => {
@@ -162,9 +180,7 @@ export function StartupPopupModal() {
 
   const getLockNoticeText = () => {
     if (config.dismissMode === "FULL_VIDEO_REQUIRED") {
-      return remainingSeconds > 0
-        ? `Watching video (unlocks in ${remainingSeconds}s)`
-        : "Watching full video..."
+      return "Please watch full video to continue"
     }
     return `Please view for ${remainingSeconds}s`
   }
@@ -172,12 +188,21 @@ export function StartupPopupModal() {
   return (
     <div className="fixed inset-0 z-[99999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
       <div className="relative w-full max-w-lg bg-slate-900 border border-slate-700/80 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
-        {/* Top-Right Header Area: Countdown or Cross Button */}
+        {/* Top-Right Header Area: Lock Badge or Cross Button */}
         <div className="absolute top-3 right-3 z-30 flex items-center gap-2">
           {locked ? (
             <div className="px-3 py-1.5 rounded-full bg-slate-800/95 border border-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1.5 shadow-xl backdrop-blur-sm animate-pulse">
-              <Clock className="w-3.5 h-3.5 text-amber-400" />
-              <span>{remainingSeconds > 0 ? `${remainingSeconds}s` : "Locked"}</span>
+              {config.dismissMode === "FULL_VIDEO_REQUIRED" ? (
+                <>
+                  <Film className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Watching Video</span>
+                </>
+              ) : (
+                <>
+                  <Clock className="w-3.5 h-3.5 text-amber-400" />
+                  <span>{remainingSeconds > 0 ? `${remainingSeconds}s` : "Locked"}</span>
+                </>
+              )}
             </div>
           ) : config.showCloseButton ? (
             <button
@@ -276,7 +301,7 @@ export function StartupPopupModal() {
                 <Lock className="w-4 h-4 text-amber-400" />
                 <span>{getLockNoticeText()}</span>
               </button>
-              {config.lockDurationSeconds > 0 && (
+              {config.dismissMode === "TIMER_REQUIRED" && config.lockDurationSeconds > 0 && (
                 <div className="w-full bg-slate-800 h-1 rounded-full overflow-hidden mt-2">
                   <div
                     className="bg-amber-400 h-full transition-all duration-1000 ease-linear rounded-full"

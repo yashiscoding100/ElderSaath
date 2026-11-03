@@ -2,15 +2,6 @@ import { prisma } from "@/lib/prisma"
 
 export async function GlobalNotice() {
   try {
-    // Proactively deactivate any internal system config notices in the background
-    prisma.notice.updateMany({
-      where: {
-        title: { startsWith: "_" },
-        isActive: true
-      },
-      data: { isActive: false }
-    }).catch(() => {})
-
     const activeNotices = await prisma.notice.findMany({
       where: { 
         isActive: true,
@@ -41,5 +32,3 @@ export async function GlobalNotice() {
     return null
   }
 }
-
-

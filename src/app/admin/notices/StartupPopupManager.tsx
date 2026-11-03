@@ -702,15 +702,28 @@ export function StartupPopupManager({ initialConfig }: { initialConfig: StartupP
               </div>
             </div>
 
-            {/* Control C: Duration Seconds / Minutes Config (Active when timer or video fallback) */}
-            {(config.dismissMode === "TIMER_REQUIRED" || config.dismissMode === "FULL_VIDEO_REQUIRED") && (
+            {/* Control C: Strict Full Video Mode Banner (No fallback period) */}
+            {config.dismissMode === "FULL_VIDEO_REQUIRED" && (
+              <div className="p-4 bg-purple-50/70 rounded-xl border border-purple-200 flex items-start gap-3">
+                <Film className="w-5 h-5 text-purple-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <h5 className="text-xs font-bold text-purple-950 uppercase tracking-wider">
+                    Strict Full Video Requirement (Zero Fallback)
+                  </h5>
+                  <p className="text-xs text-purple-800 leading-relaxed">
+                    The user must watch the entire video until the end to unlock the announcement. There is no countdown bypass or fallback period.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Control C2: Duration Seconds / Minutes Config (Active ONLY for TIMER_REQUIRED mode) */}
+            {config.dismissMode === "TIMER_REQUIRED" && (
               <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                     <Timer className="w-4 h-4 text-amber-500" />
-                    {config.dismissMode === "FULL_VIDEO_REQUIRED"
-                      ? "Safety Fallback Duration (Seconds)"
-                      : "Required Minimum Duration (Seconds)"}
+                    Required Minimum Duration (Seconds)
                   </label>
                   <span className="text-xs font-black text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200">
                     Current Lock: {formatDurationDisplay(config.lockDurationSeconds)}
