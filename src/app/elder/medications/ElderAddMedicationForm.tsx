@@ -36,6 +36,10 @@ export function ElderAddMedicationForm() {
         setName("")
         setDosage("")
         setTime("")
+        if (typeof (window as any).__syncElderAlarms === "function") {
+          (window as any).__syncElderAlarms()
+        }
+        window.dispatchEvent(new Event("eldersaath:refresh-medications"))
         router.refresh()
       }
     } catch (e) {

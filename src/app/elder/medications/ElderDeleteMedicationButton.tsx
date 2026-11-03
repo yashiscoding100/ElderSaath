@@ -12,7 +12,13 @@ export function ElderDeleteMedicationButton({ medicationId, medicationName }: { 
     setLoading(true)
     try {
       const res = await fetch(`/api/medications?id=${medicationId}`, { method: "DELETE" })
-      if (res.ok) router.refresh()
+      if (res.ok) {
+        if (typeof (window as any).__syncElderAlarms === "function") {
+          (window as any).__syncElderAlarms()
+        }
+        window.dispatchEvent(new Event("eldersaath:refresh-medications"))
+        router.refresh()
+      }
     } catch (e) {
       console.error(e)
     } finally {

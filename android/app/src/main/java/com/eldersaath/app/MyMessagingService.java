@@ -27,6 +27,18 @@ public class MyMessagingService extends MessagingService {
     @Override
     public void onMessageReceived(RemoteMessage remoteMessage) {
         
+        // 1. SILENT BACKGROUND SYNC: Update offline alarms from cloud without ringing
+        if (remoteMessage.getData().size() > 0 && "SYNC_MEDICATIONS".equals(remoteMessage.getData().get("type"))) {
+            Log.i("ALARM_DEBUG", "FCM SYNC_MEDICATIONS RECEIVED - Updating offline hardware alarm schedule in background");
+            String medsJson = remoteMessage.getData().get("medications");
+            if (medsJson != null && !medsJson.trim().isEmpty()) {
+                AlarmScheduler.saveAndSchedule(this, medsJson);
+            } else {
+                AlarmScheduler.rescheduleAll(this);
+            }
+            return;
+        }
+
         if (remoteMessage.getData().size() > 0 && "ALARM".equals(remoteMessage.getData().get("type"))) {
             
             long now = System.currentTimeMillis();

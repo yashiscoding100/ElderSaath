@@ -8,8 +8,9 @@ import android.os.Build;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        // Register custom local plugin
+        // Register custom local plugins
         registerPlugin(PermissionsPlugin.class);
+        registerPlugin(AlarmSyncPlugin.class);
         
         super.onCreate(savedInstanceState);
         

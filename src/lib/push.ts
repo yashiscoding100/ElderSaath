@@ -81,22 +81,26 @@ export function ensureFirebaseInit(): boolean {
 }
 
 export async function sendPushNotification(userId: string, payload: Record<string, unknown>) {
-  // Force an in-app database notification for the Bell icon
-  const alertTitle = (payload.title as string) || (payload.label as string) || "Notification"
-  const alertBody = (payload.body as string) || ""
+  const isSilentSync = payload.type === "SYNC_MEDICATIONS"
 
-  try {
-    await prisma.appNotification.create({
-      data: {
-        userId,
-        title: alertTitle,
-        message: alertBody,
-        type: payload.type === "ALARM" || payload.type === "EMERGENCY" ? "ALERT" : "INFO",
-        link: (payload.url as string) || null
-      }
-    })
-  } catch (dbErr) {
-    console.error("Failed to save AppNotification", dbErr)
+  // Only create in-app database notification for visible alerts, not silent background data sync
+  if (!isSilentSync) {
+    const alertTitle = (payload.title as string) || (payload.label as string) || "Notification"
+    const alertBody = (payload.body as string) || ""
+
+    try {
+      await prisma.appNotification.create({
+        data: {
+          userId,
+          title: alertTitle,
+          message: alertBody,
+          type: payload.type === "ALARM" || payload.type === "EMERGENCY" ? "ALERT" : "INFO",
+          link: (payload.url as string) || null
+        }
+      })
+    } catch (dbErr) {
+      console.error("Failed to save AppNotification", dbErr)
+    }
   }
 
   const subscriptions = await prisma.pushSubscription.findMany({
@@ -117,19 +121,20 @@ export async function sendPushNotification(userId: string, payload: Record<strin
       
       const token = sub.endpoint.replace("fcm:", "")
       const isAlarm = payload.type === 'ALARM'
+      const isSilentSync = payload.type === 'SYNC_MEDICATIONS'
       
       const message: any = {
-        ...(isAlarm ? {} : {
+        ...(isAlarm || isSilentSync ? {} : {
           notification: {
-            title: alertTitle,
-            body: alertBody,
+            title: (payload.title as string) || (payload.label as string) || "Notification",
+            body: (payload.body as string) || "",
           }
         }),
         data: payload as Record<string, string>,
         token: token,
         android: {
           priority: "high" as const,
-          ...(isAlarm ? {} : {
+          ...(isAlarm || isSilentSync ? {} : {
             notification: {
               channelId: "sos_alarms",
               sound: "default"
@@ -139,18 +144,20 @@ export async function sendPushNotification(userId: string, payload: Record<strin
         // Apple Push Notification Service (iOS)
         apns: {
           headers: {
-            "apns-priority": "10",
-            "apns-push-type": "alert"
+            "apns-priority": isSilentSync ? "5" : "10",
+            "apns-push-type": isSilentSync ? "background" : "alert"
           },
           payload: {
             aps: {
-              alert: {
-                title: alertTitle,
-                body: alertBody
-              },
-              sound: "default",
-              badge: 1,
-              interruptionLevel: isAlarm ? "time-sensitive" : "active",
+              ...(isSilentSync ? {} : {
+                alert: {
+                  title: (payload.title as string) || (payload.label as string) || "Notification",
+                  body: (payload.body as string) || ""
+                },
+                sound: "default",
+                badge: 1,
+                interruptionLevel: isAlarm ? "time-sensitive" : "active",
+              }),
               contentAvailable: true
             }
           }

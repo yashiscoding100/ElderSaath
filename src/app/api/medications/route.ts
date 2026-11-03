@@ -22,6 +22,17 @@ export async function POST(req: Request) {
     
     const medication = await prisma.medication.create({ data: { elderId: targetElderId, name, dosage, frequency, time, instructions } })
 
+    // Trigger silent hardware alarm sync on Elder's device immediately
+    try {
+      const allMeds = await prisma.medication.findMany({ where: { elderId: targetElderId } })
+      await sendPushNotification(targetElderId, {
+        type: "SYNC_MEDICATIONS",
+        medications: JSON.stringify(allMeds)
+      })
+    } catch (e) {
+      console.warn("Silent sync push warning:", e)
+    }
+
     // If elder added it, notify caretakers
     if (session.user.role === "ELDER") {
       const rels = await prisma.caregiverRelationship.findMany({ where: { elderId: targetElderId, status: "ACTIVE" } })
@@ -81,7 +92,20 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 403 })
     }
 
+    const targetElderId = med.elderId
     await prisma.medication.delete({ where: { id } })
+
+    // Trigger silent hardware alarm sync on Elder's device immediately
+    try {
+      const allMeds = await prisma.medication.findMany({ where: { elderId: targetElderId } })
+      await sendPushNotification(targetElderId, {
+        type: "SYNC_MEDICATIONS",
+        medications: JSON.stringify(allMeds)
+      })
+    } catch (e) {
+      console.warn("Silent sync push warning:", e)
+    }
+
     return NextResponse.json({ message: "Deleted" }, { status: 200 })
   } catch (error) { return NextResponse.json({ message: "Error" }, { status: 500 }) }
 }
@@ -113,6 +137,18 @@ export async function PATCH(req: Request) {
       where: { id },
       data: { name, dosage, frequency, time, instructions }
     })
+
+    // Trigger silent hardware alarm sync on Elder's device immediately
+    try {
+      const allMeds = await prisma.medication.findMany({ where: { elderId: med.elderId } })
+      await sendPushNotification(med.elderId, {
+        type: "SYNC_MEDICATIONS",
+        medications: JSON.stringify(allMeds)
+      })
+    } catch (e) {
+      console.warn("Silent sync push warning:", e)
+    }
+
     return NextResponse.json(updatedMed, { status: 200 })
   } catch (error) { return NextResponse.json({ message: "Error" }, { status: 500 }) }
 }
