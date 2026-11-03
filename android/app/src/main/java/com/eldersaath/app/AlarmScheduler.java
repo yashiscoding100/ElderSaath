@@ -127,24 +127,28 @@ public class AlarmScheduler {
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject obj = arr.getJSONObject(i);
                 String id = obj.optString("id");
-                String name = obj.optString("name", "Medication");
+                String name = obj.optString("name", obj.optString("title", "Reminder"));
                 String dosage = obj.optString("dosage", "");
                 String time = obj.optString("time");
                 String frequency = obj.optString("frequency", "daily");
-                String instructions = obj.optString("instructions", "");
+                String instructions = obj.optString("instructions", obj.optString("description", ""));
                 String elderId = obj.optString("elderId", "");
+                String type = obj.optString("type", "MEDICATION");
+                String label = obj.optString("label", "TASK".equalsIgnoreCase(type) ? "Task: " + name : "Time for " + name);
+                String body = obj.optString("body", "");
+                String actionText = obj.optString("actionText", "TASK".equalsIgnoreCase(type) ? "COMPLETE TASK / STOP ALARM" : "TAKE MEDICINE / STOP ALARM");
 
                 if (id == null || id.isEmpty() || time == null || time.isEmpty()) continue;
 
                 long triggerMs = calculateNextTriggerTime(time, frequency);
                 if (triggerMs <= 0) continue;
 
-                scheduleSingleAlarm(context, am, id, name, dosage, time, frequency, instructions, elderId, triggerMs);
+                scheduleSingleAlarm(context, am, id, name, dosage, time, frequency, instructions, elderId, type, label, body, actionText, triggerMs);
                 scheduledIds.add(id);
             }
 
             prefs.edit().putStringSet(KEY_SCHEDULED_IDS, scheduledIds).apply();
-            Log.i(TAG, "Hardware alarms synced successfully! Total scheduled: " + scheduledIds.size());
+            Log.i(TAG, "Hardware alarms synced successfully! Total scheduled (meds & tasks): " + scheduledIds.size());
         } catch (Exception e) {
             Log.e(TAG, "Error parsing and scheduling alarms", e);
         }
@@ -155,7 +159,8 @@ public class AlarmScheduler {
      */
     public static void scheduleSingleAlarm(Context context, AlarmManager am, String id, String name,
                                            String dosage, String time, String frequency,
-                                           String instructions, String elderId, long triggerMs) {
+                                           String instructions, String elderId, String type,
+                                           String label, String body, String actionText, long triggerMs) {
         if (am == null) am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
         if (am == null) return;
 
@@ -168,6 +173,10 @@ public class AlarmScheduler {
         intent.putExtra("frequency", frequency);
         intent.putExtra("instructions", instructions);
         intent.putExtra("elderId", elderId);
+        intent.putExtra("type", type);
+        intent.putExtra("label", label);
+        intent.putExtra("body", body);
+        intent.putExtra("actionText", actionText);
 
         int requestCode = getRequestCode(id);
         PendingIntent pendingIntent = PendingIntent.getBroadcast(
@@ -195,20 +204,21 @@ public class AlarmScheduler {
         }
 
         long secondsUntil = (triggerMs - System.currentTimeMillis()) / 1000;
-        Log.i(TAG, ">>> Exact Hardware Alarm SET: '" + name + "' (" + time + ") in " + secondsUntil + " seconds (at " + triggerMs + "ms)");
+        Log.i(TAG, ">>> Exact Hardware Alarm SET: [" + type + "] '" + name + "' (" + time + ") in " + secondsUntil + " seconds (at " + triggerMs + "ms)");
     }
 
     /**
-     * Reschedules the next recurrence of a medication after it fires.
+     * Reschedules the next recurrence of a medication or task after it fires.
      */
     public static void scheduleNextOccurrence(Context context, String medicationId, String name,
                                               String dosage, String time, String frequency,
-                                              String instructions, String elderId) {
+                                              String instructions, String elderId, String type,
+                                              String label, String body, String actionText) {
         if (medicationId == null || time == null) return;
         long triggerMs = calculateNextTriggerTime(time, frequency);
         if (triggerMs > 0) {
             AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
-            scheduleSingleAlarm(context, am, medicationId, name, dosage, time, frequency, instructions, elderId, triggerMs);
+            scheduleSingleAlarm(context, am, medicationId, name, dosage, time, frequency, instructions, elderId, type, label, body, actionText, triggerMs);
         }
     }
 

@@ -11,6 +11,9 @@ export function DeleteTaskButton({ id }: { id: string }) {
     setLoading(true)
     try {
       await fetch("/api/tasks?id=" + id, { method: "DELETE" })
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("eldersaath:refresh-tasks"))
+      }
       router.refresh()
     } catch (e) {
       console.error(e)

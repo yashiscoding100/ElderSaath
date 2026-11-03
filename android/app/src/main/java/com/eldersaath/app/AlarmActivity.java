@@ -112,9 +112,13 @@ public class AlarmActivity extends Activity {
         Button stopBtn = findViewById(R.id.btnStopAlarm);
         Button snoozeBtn = findViewById(R.id.btnSnoozeAlarm);
 
+        String alarmType = getIntent().getStringExtra("type");
         if (label.contains("SOS") || label.contains("EMERGENCY")) {
             iconView.setText("🚨");
             alertBadge.setText("🚨 EMERGENCY SOS ACTIVE!");
+        } else if ("TASK".equalsIgnoreCase(alarmType) || label.toLowerCase().startsWith("task")) {
+            iconView.setText("📋");
+            alertBadge.setText("📋 SCHEDULED TASK REMINDER");
         } else {
             iconView.setText("⏰");
             alertBadge.setText("⏰ MEDICATION REMINDER");

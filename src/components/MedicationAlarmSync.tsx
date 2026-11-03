@@ -13,39 +13,69 @@ export function MedicationAlarmSync() {
     isSyncing.current = true
 
     try {
-      // 1. Sync Medications
-      const res = await fetch("/api/medications")
-      if (res.ok) {
-        const meds = await res.json()
-        if (Array.isArray(meds)) {
-          try {
-            localStorage.setItem("eldersaath_cached_medications", JSON.stringify(meds))
-            localStorage.setItem("eldersaath_meds_last_synced", new Date().toISOString())
-          } catch (e) {
-            console.warn("[MedicationAlarmSync] LocalStorage cache warning:", e)
-          }
+      // 1. Fetch Medications and Tasks with Alarms in parallel
+      const [medsRes, tasksRes] = await Promise.all([
+        fetch("/api/medications").catch(() => null),
+        fetch("/api/tasks").catch(() => null)
+      ])
 
-          const capacitor = (window as any).Capacitor
-          const AlarmSyncPlugin = capacitor?.Plugins?.AlarmSyncPlugin
+      const meds = medsRes && medsRes.ok ? await medsRes.json() : []
+      const tasks = tasksRes && tasksRes.ok ? await tasksRes.json() : []
 
-          if (AlarmSyncPlugin && typeof AlarmSyncPlugin.syncAlarms === "function") {
-            try {
-              const syncResult = await AlarmSyncPlugin.syncAlarms({ medications: meds })
-              console.log(`[MedicationAlarmSync] Synced ${syncResult?.count || meds.length} alarms directly into Android AlarmManager.`)
-            } catch (pluginErr) {
-              console.error("[MedicationAlarmSync] AlarmSyncPlugin.syncAlarms failed:", pluginErr)
-            }
-          }
+      // Build unified alarm items list
+      const alarmItems: any[] = [
+        ...(Array.isArray(meds) ? meds.map((m: any) => ({
+          id: m.id,
+          name: m.name,
+          dosage: m.dosage || "",
+          time: m.time,
+          frequency: m.frequency || "daily",
+          instructions: m.instructions || "",
+          elderId: m.elderId || session.user.id,
+          type: "MEDICATION",
+          label: `Time for ${m.name}`,
+          body: `Dosage: ${m.dosage || "Scheduled Dose"}${m.instructions ? ". " + m.instructions : ""}`,
+          actionText: "TAKE MEDICINE / STOP ALARM"
+        })) : []),
+        ...(Array.isArray(tasks) ? tasks.filter((t: any) => t.triggerAlarm && t.time).map((t: any) => ({
+          id: t.id,
+          name: t.title,
+          dosage: "",
+          time: t.time,
+          frequency: t.frequency || "daily",
+          instructions: t.description || "",
+          elderId: t.elderId || session.user.id,
+          type: "TASK",
+          label: `Task: ${t.title}`,
+          body: t.description || "Important task scheduled for now.",
+          actionText: "COMPLETE TASK / STOP ALARM"
+        })) : [])
+      ]
+
+      try {
+        localStorage.setItem("eldersaath_cached_alarms", JSON.stringify(alarmItems))
+        localStorage.setItem("eldersaath_alarms_last_synced", new Date().toISOString())
+      } catch (e) {
+        console.warn("[MedicationAlarmSync] LocalStorage cache warning:", e)
+      }
+
+      const capacitor = (window as any).Capacitor
+      const AlarmSyncPlugin = capacitor?.Plugins?.AlarmSyncPlugin
+
+      if (AlarmSyncPlugin && typeof AlarmSyncPlugin.syncAlarms === "function") {
+        try {
+          const syncResult = await AlarmSyncPlugin.syncAlarms({ medications: alarmItems })
+          console.log(`[MedicationAlarmSync] Synced ${syncResult?.count || alarmItems.length} alarms (meds & tasks) directly into Android AlarmManager.`)
+        } catch (pluginErr) {
+          console.error("[MedicationAlarmSync] AlarmSyncPlugin.syncAlarms failed:", pluginErr)
         }
       }
 
       // 2. Sync SOS Widget Settings
-      const sosRes = await fetch("/api/sos/settings")
-      if (sosRes.ok) {
+      const sosRes = await fetch("/api/sos/settings").catch(() => null)
+      if (sosRes && sosRes.ok) {
         const sosData = await sosRes.json()
         if (sosData?.config) {
-          const capacitor = (window as any).Capacitor
-          const AlarmSyncPlugin = capacitor?.Plugins?.AlarmSyncPlugin
           if (AlarmSyncPlugin && typeof AlarmSyncPlugin.syncSosSettings === "function") {
             try {
               await AlarmSyncPlugin.syncSosSettings({
@@ -87,6 +117,7 @@ export function MedicationAlarmSync() {
     window.addEventListener("online", handleOnline)
     window.addEventListener("focus", handleFocus)
     window.addEventListener("eldersaath:refresh-medications", handleCustomSync)
+    window.addEventListener("eldersaath:refresh-tasks", handleCustomSync)
 
     // Periodic check every 5 minutes in background
     const interval = setInterval(fetchAndSync, 5 * 60 * 1000)
@@ -95,6 +126,7 @@ export function MedicationAlarmSync() {
       window.removeEventListener("online", handleOnline)
       window.removeEventListener("focus", handleFocus)
       window.removeEventListener("eldersaath:refresh-medications", handleCustomSync)
+      window.removeEventListener("eldersaath:refresh-tasks", handleCustomSync)
       clearInterval(interval)
     }
   }, [session])

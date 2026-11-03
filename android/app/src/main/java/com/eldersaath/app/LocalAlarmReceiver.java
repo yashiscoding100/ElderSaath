@@ -29,9 +29,30 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
         String frequency = intent.getStringExtra("frequency");
         String instructions = intent.getStringExtra("instructions");
         String elderId = intent.getStringExtra("elderId");
+        String type = intent.getStringExtra("type");
+        String label = intent.getStringExtra("label");
+        String body = intent.getStringExtra("body");
+        String actionText = intent.getStringExtra("actionText");
 
-        if (name == null || name.isEmpty()) name = "Medication";
+        if (type == null) type = "MEDICATION";
+        if (name == null || name.isEmpty()) name = "TASK".equalsIgnoreCase(type) ? "Task Reminder" : "Medication";
         if (dosage == null) dosage = "Scheduled Dose";
+
+        if (label == null || label.isEmpty()) {
+            label = "TASK".equalsIgnoreCase(type) ? "Task: " + name : "Time for " + name;
+        }
+
+        if (body == null || body.isEmpty()) {
+            if ("TASK".equalsIgnoreCase(type)) {
+                body = (instructions != null && !instructions.isEmpty()) ? instructions : "Scheduled task due now.";
+            } else {
+                body = "Dosage: " + dosage + (instructions != null && !instructions.isEmpty() ? ". " + instructions : "");
+            }
+        }
+
+        if (actionText == null || actionText.isEmpty()) {
+            actionText = "TASK".equalsIgnoreCase(type) ? "COMPLETE TASK / STOP ALARM" : "TAKE MEDICINE / STOP ALARM";
+        }
 
         // 1. Force the CPU and Screen awake immediately
         PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
@@ -49,7 +70,7 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
 
         // 2. Queue up the NEXT occurrence of this recurring alarm
         try {
-            AlarmScheduler.scheduleNextOccurrence(context, medicationId, name, dosage, time, frequency, instructions, elderId);
+            AlarmScheduler.scheduleNextOccurrence(context, medicationId, name, dosage, time, frequency, instructions, elderId, type, label, body, actionText);
         } catch (Exception e) {
             Log.e(TAG, "Error scheduling next occurrence", e);
         }
@@ -61,13 +82,14 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
             Intent.FLAG_ACTIVITY_CLEAR_TOP |
             Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
         );
-        alarmIntent.putExtra("label", "Time for " + name);
-        alarmIntent.putExtra("body", "Dosage: " + dosage + (instructions != null && !instructions.isEmpty() ? ". " + instructions : ""));
-        alarmIntent.putExtra("actionText", "TAKE MEDICINE / STOP ALARM");
-        alarmIntent.putExtra("snoozeText", "Take later");
+        alarmIntent.putExtra("label", label);
+        alarmIntent.putExtra("body", body);
+        alarmIntent.putExtra("actionText", actionText);
+        alarmIntent.putExtra("snoozeText", "TASK".equalsIgnoreCase(type) ? "Do task later" : "Take later");
         alarmIntent.putExtra("snoozeDuration", 10);
         alarmIntent.putExtra("elderId", elderId);
         alarmIntent.putExtra("medicationId", medicationId);
+        alarmIntent.putExtra("type", type);
         alarmIntent.putExtra("stickyNotification", true);
 
         // 4. Notification Channel with Alarm priority & sound

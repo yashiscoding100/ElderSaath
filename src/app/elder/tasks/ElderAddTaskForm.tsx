@@ -34,6 +34,7 @@ export function ElderAddTaskForm() {
         setTriggerAlarm(false)
       setFrequency("0,1,2,3,4,5,6")
         setIsOpen(false)
+        window.dispatchEvent(new CustomEvent("eldersaath:refresh-tasks"))
         router.refresh()
       }
     } catch (e) {

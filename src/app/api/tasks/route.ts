@@ -2,6 +2,36 @@ import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { sendPushNotification } from "@/lib/push"
+import { sendSilentAlarmSchedulePush } from "@/lib/alarmSync"
+
+export async function GET(req: Request) {
+  const session = await auth()
+  if (!session) return NextResponse.json({ message: "Unauthorized" }, { status: 401 })
+
+  try {
+    let elderId = session.user.id
+    if (session.user.role === "CHILD") {
+      const { searchParams } = new URL(req.url)
+      const queryElder = searchParams.get("elderId")
+      if (queryElder) {
+        const rel = await prisma.caregiverRelationship.findUnique({
+          where: { elderId_childId: { elderId: queryElder, childId: session.user.id } }
+        })
+        if (!rel || rel.status !== "ACTIVE") return NextResponse.json({ message: "Forbidden" }, { status: 403 })
+        elderId = queryElder
+      }
+    }
+
+    const tasks = await prisma.task.findMany({
+      where: { elderId },
+      orderBy: { createdAt: "desc" }
+    })
+
+    return NextResponse.json(tasks)
+  } catch (e) {
+    return NextResponse.json({ message: "Failed to fetch tasks" }, { status: 500 })
+  }
+}
 
 export async function POST(req: Request) {
   const session = await auth()
@@ -26,6 +56,11 @@ export async function POST(req: Request) {
     const task = await prisma.task.create({
       data: { elderId: targetElderId, assignerId: session.user.id, title, description, time, triggerAlarm: triggerAlarm === true, frequency: frequency || "DAILY" }
     })
+
+    // If task has alarm enabled, immediately trigger silent hardware alarm sync on elder's phone
+    if (triggerAlarm === true) {
+      await sendSilentAlarmSchedulePush(targetElderId).catch(() => {})
+    }
     
     if (session.user.role === "CHILD") {
       await sendPushNotification(targetElderId, {
@@ -62,7 +97,16 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ message: "Forbidden" }, { status: 403 })
     }
 
+    const targetElderId = task.elderId
+    const hadAlarm = task.triggerAlarm
+
     await prisma.task.delete({ where: { id } })
+
+    // If deleted task had an alarm, re-sync hardware alarms immediately
+    if (hadAlarm) {
+      await sendSilentAlarmSchedulePush(targetElderId).catch(() => {})
+    }
+
     return NextResponse.json({ success: true })
   } catch (e) {
     return NextResponse.json({ message: "Failed to delete" }, { status: 500 })

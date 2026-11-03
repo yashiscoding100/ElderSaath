@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { sendPushNotification } from "@/lib/push"
+import { sendSilentAlarmSchedulePush } from "@/lib/alarmSync"
 
 export async function POST(req: Request) {
   const session = await auth()
@@ -22,16 +23,8 @@ export async function POST(req: Request) {
     
     const medication = await prisma.medication.create({ data: { elderId: targetElderId, name, dosage, frequency, time, instructions } })
 
-    // Trigger silent hardware alarm sync on Elder's device immediately
-    try {
-      const allMeds = await prisma.medication.findMany({ where: { elderId: targetElderId } })
-      await sendPushNotification(targetElderId, {
-        type: "SYNC_MEDICATIONS",
-        medications: JSON.stringify(allMeds)
-      })
-    } catch (e) {
-      console.warn("Silent sync push warning:", e)
-    }
+    // Trigger silent hardware alarm sync on Elder's device immediately (Meds + Tasks)
+    await sendSilentAlarmSchedulePush(targetElderId).catch(() => {})
 
     // If elder added it, notify caretakers
     if (session.user.role === "ELDER") {
@@ -95,16 +88,8 @@ export async function DELETE(req: Request) {
     const targetElderId = med.elderId
     await prisma.medication.delete({ where: { id } })
 
-    // Trigger silent hardware alarm sync on Elder's device immediately
-    try {
-      const allMeds = await prisma.medication.findMany({ where: { elderId: targetElderId } })
-      await sendPushNotification(targetElderId, {
-        type: "SYNC_MEDICATIONS",
-        medications: JSON.stringify(allMeds)
-      })
-    } catch (e) {
-      console.warn("Silent sync push warning:", e)
-    }
+    // Trigger silent hardware alarm sync on Elder's device immediately (Meds + Tasks)
+    await sendSilentAlarmSchedulePush(targetElderId).catch(() => {})
 
     return NextResponse.json({ message: "Deleted" }, { status: 200 })
   } catch (error) { return NextResponse.json({ message: "Error" }, { status: 500 }) }
@@ -138,16 +123,8 @@ export async function PATCH(req: Request) {
       data: { name, dosage, frequency, time, instructions }
     })
 
-    // Trigger silent hardware alarm sync on Elder's device immediately
-    try {
-      const allMeds = await prisma.medication.findMany({ where: { elderId: med.elderId } })
-      await sendPushNotification(med.elderId, {
-        type: "SYNC_MEDICATIONS",
-        medications: JSON.stringify(allMeds)
-      })
-    } catch (e) {
-      console.warn("Silent sync push warning:", e)
-    }
+    // Trigger silent hardware alarm sync on Elder's device immediately (Meds + Tasks)
+    await sendSilentAlarmSchedulePush(med.elderId).catch(() => {})
 
     return NextResponse.json(updatedMed, { status: 200 })
   } catch (error) { return NextResponse.json({ message: "Error" }, { status: 500 }) }
