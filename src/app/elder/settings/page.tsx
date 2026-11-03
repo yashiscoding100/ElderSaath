@@ -5,9 +5,7 @@ import { ScheduleSettings } from "./ScheduleSettings"
 import { EditProfileForm } from "@/app/child/settings/EditProfileForm"
 import { ElderPushSettings } from "./ElderPushSettings"
 import { ElderAlarmPreferences } from "./ElderAlarmPreferences"
-import { ElderUiStyleSettings } from "./ElderUiStyleSettings"
 import { SosSettingsCard } from "@/components/SosSettingsCard"
-import { parseElderUiStyle } from "@/lib/elderUiPreferences"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 
@@ -21,8 +19,6 @@ export default async function ElderSettings() {
   const profile = await prisma.elderProfile.findUnique({
     where: { userId: session.user.id }
   })
-
-  const currentUiStyle = parseElderUiStyle(profile?.notes)
 
   return (
     <div className="min-h-screen bg-slate-50 p-6 flex flex-col items-center">
@@ -38,7 +34,6 @@ export default async function ElderSettings() {
         </div>
 
         <div className="divide-y divide-slate-100">
-          <ElderUiStyleSettings initialStyle={currentUiStyle} />
           <div className="p-6">
             <SosSettingsCard />
           </div>

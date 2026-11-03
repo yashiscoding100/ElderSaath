@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { BellRing, Sparkles } from "lucide-react"
+import { BellRing } from "lucide-react"
 import { useRouter } from "next/navigation"
 
 export function ElderAlarmSettings({ 
@@ -10,23 +10,20 @@ export function ElderAlarmSettings({
   initialSnoozeText,
   initialSnoozeDuration,
   initialCanManageMeds, 
-  initialStickyAlarmNotification,
-  initialUiStyle = "MODERN"
+  initialStickyAlarmNotification
 }: { 
   elderId: string, 
   elderName: string,
   initialSnoozeText: string,
   initialSnoozeDuration: number,
   initialCanManageMeds: boolean,
-  initialStickyAlarmNotification?: boolean,
-  initialUiStyle?: "MODERN" | "CLASSIC"
+  initialStickyAlarmNotification?: boolean
 }) {
   const router = useRouter()
   const [snoozeText, setSnoozeText] = useState(initialSnoozeText)
   const [snoozeDuration, setSnoozeDuration] = useState(initialSnoozeDuration)
   const [canManageMeds, setCanManageMeds] = useState(initialCanManageMeds)
   const [stickyAlarmNotification, setStickyAlarmNotification] = useState(initialStickyAlarmNotification ?? true)
-  const [uiStyle, setUiStyle] = useState<"MODERN" | "CLASSIC">(initialUiStyle)
   const [saving, setSaving] = useState(false)
 
   const handleSave = async () => {
@@ -40,8 +37,7 @@ export function ElderAlarmSettings({
           alarmSnoozeText: snoozeText, 
           alarmSnoozeDuration: snoozeDuration, 
           canManageMeds, 
-          stickyAlarmNotification,
-          uiStyle
+          stickyAlarmNotification 
         })
       })
       alert("Elder Settings saved!")
@@ -59,9 +55,9 @@ export function ElderAlarmSettings({
         <div>
           <h3 className="font-bold text-slate-900 text-lg flex items-center gap-2">
             <BellRing className="w-5 h-5 text-blue-600" />
-            Display & Alarm Controls
+            Alarm & Medication Controls
           </h3>
-          <p className="text-sm text-slate-500 mt-1">Configure layout style, alarms, and permissions for {elderName}.</p>
+          <p className="text-sm text-slate-500 mt-1">Configure alarm behavior and permissions for {elderName}.</p>
         </div>
         <button 
           onClick={handleSave} 
@@ -70,63 +66,6 @@ export function ElderAlarmSettings({
         >
           {saving ? "Saving..." : "Save Settings"}
         </button>
-      </div>
-
-      {/* Elder Screen Display Style Switcher */}
-      <div className="mb-6 pb-6 border-b border-slate-100">
-        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-          Elder Screen Display Mode
-        </label>
-        <p className="text-xs text-slate-500 mb-3">
-          Select which home screen experience {elderName} sees on their phone.
-        </p>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={() => setUiStyle("MODERN")}
-            className={`p-4 rounded-xl border-2 text-left transition-all ${
-              uiStyle === "MODERN"
-                ? "border-blue-600 bg-blue-50/80 shadow-xs"
-                : "border-slate-200 bg-white hover:bg-slate-50"
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="font-extrabold text-slate-900 text-sm flex items-center gap-1.5">
-                <span>✨</span> Modern Friendly
-              </span>
-              {uiStyle === "MODERN" && (
-                <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
-              )}
-            </div>
-            <p className="text-xs text-slate-600 font-medium">
-              Next-dose hero card, vitals overview, clean action hub. (Recommended default)
-            </p>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setUiStyle("CLASSIC")}
-            className={`p-4 rounded-xl border-2 text-left transition-all ${
-              uiStyle === "CLASSIC"
-                ? "border-blue-600 bg-blue-50/80 shadow-xs"
-                : "border-slate-200 bg-white hover:bg-slate-50"
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="font-extrabold text-slate-900 text-sm flex items-center gap-1.5">
-                <span>🧸</span> Classic Simple
-              </span>
-              {uiStyle === "CLASSIC" && (
-                <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
-              )}
-            </div>
-            <p className="text-xs text-slate-600 font-medium">
-              Extra-large touch cards, high-contrast simple layout with minimal text.
-            </p>
-          </button>
-        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -157,7 +96,6 @@ export function ElderAlarmSettings({
           <p className="text-sm text-slate-500 mt-1">Allows the elder to add or delete their own medicines.</p>
         </div>
         <button
-          type="button"
           onClick={() => setCanManageMeds(!canManageMeds)}
           className={`w-12 h-6 rounded-full relative transition-colors ${canManageMeds ? "bg-emerald-500" : "bg-slate-300"}`}
         >
@@ -171,7 +109,6 @@ export function ElderAlarmSettings({
           <p className="text-xs text-slate-500">Show a persistent tray notification during full-screen alarms.</p>
         </div>
         <button 
-          type="button"
           onClick={() => setStickyAlarmNotification(!stickyAlarmNotification)}
           className={`w-12 h-6 rounded-full relative transition-colors ${stickyAlarmNotification ? "bg-blue-600" : "bg-slate-300"}`}
         >
