@@ -11,14 +11,13 @@ export async function GET(req: Request) {
     const result = await runMedicationAndTaskCrons(force)
 
     return NextResponse.json({
-      message: "Cron executed successfully",
       scheduled: result.totalScheduled,
       ...result
     }, { status: 200 })
   } catch (error: any) {
     console.error("[api/cron] Error:", error)
     return NextResponse.json({
-      message: "Failed to run cron jobs",
+      message: "Failed to run cron",
       error: error?.message || String(error)
     }, { status: 500 })
   }

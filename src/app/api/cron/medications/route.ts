@@ -11,7 +11,6 @@ export async function GET(req: Request) {
     const result = await runMedicationAndTaskCrons(force)
 
     return NextResponse.json({
-      message: `Sent ${result.firedMedsCount} med reminders`,
       ...result
     }, { status: 200 })
   } catch (error: any) {
