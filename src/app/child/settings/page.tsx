@@ -10,6 +10,7 @@ import { HealthParameterSettings } from "./HealthParameterSettings"
 import { ElderAlarmSettings } from "./ElderAlarmSettings"
 import { SosSettingsCard } from "@/components/SosSettingsCard"
 import { PushSubscriptionManager } from "@/components/PushSubscriptionManager"
+import { parseElderUiStyle } from "@/lib/elderUiPreferences"
 
 export default async function ChildSettings() {
   const session = await auth()
@@ -63,6 +64,7 @@ export default async function ChildSettings() {
               initialSnoozeDuration={relationship.elder.alarmSnoozeDuration || 10}
               initialCanManageMeds={relationship.elder.canManageMeds || false}
               initialStickyAlarmNotification={relationship.elder.elderProfile?.stickyAlarmNotification ?? true}
+              initialUiStyle={parseElderUiStyle(relationship.elder.elderProfile?.notes)}
             />
           </>
         )}

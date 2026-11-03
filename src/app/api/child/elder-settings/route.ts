@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
+import { encodeElderUiStyle, ElderUiStyle } from "@/lib/elderUiPreferences"
 
 export async function POST(req: Request) {
   const session = await auth()
@@ -10,7 +11,15 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { elderId, alarmSnoozeText, alarmSnoozeDuration, sosEnabled, canManageMeds, stickyAlarmNotification } = await req.json()
+    const { 
+      elderId, 
+      alarmSnoozeText, 
+      alarmSnoozeDuration, 
+      sosEnabled, 
+      canManageMeds, 
+      stickyAlarmNotification,
+      uiStyle 
+    } = await req.json()
     
     // Ensure the child has access to this elder
     const rel = await prisma.caregiverRelationship.findFirst({
@@ -29,11 +38,28 @@ export async function POST(req: Request) {
       }
     })
 
+    const existingProfile = await prisma.elderProfile.findUnique({
+      where: { userId: elderId }
+    })
+
+    const updateData: any = {}
     if (stickyAlarmNotification !== undefined) {
+      updateData.stickyAlarmNotification = stickyAlarmNotification
+    }
+
+    if (uiStyle === "MODERN" || uiStyle === "CLASSIC") {
+      updateData.notes = encodeElderUiStyle(existingProfile?.notes, uiStyle as ElderUiStyle)
+    }
+
+    if (Object.keys(updateData).length > 0) {
       await prisma.elderProfile.upsert({
         where: { userId: elderId },
-        update: { stickyAlarmNotification },
-        create: { userId: elderId, stickyAlarmNotification }
+        update: updateData,
+        create: { 
+          userId: elderId, 
+          stickyAlarmNotification: stickyAlarmNotification ?? true,
+          notes: updateData.notes || ""
+        }
       })
     }
 
