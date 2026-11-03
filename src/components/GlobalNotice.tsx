@@ -6,7 +6,7 @@ export async function GlobalNotice() {
       where: { 
         isActive: true,
         NOT: {
-          title: { startsWith: "__SYSTEM_" }
+          title: { startsWith: "__" }
         }
       },
       orderBy: { createdAt: "desc" }

@@ -11,7 +11,7 @@ export default async function AdminNoticesPage() {
     prisma.notice.findMany({
       where: {
         NOT: {
-          title: { startsWith: "__SYSTEM_" }
+          title: { startsWith: "__" }
         }
       },
       orderBy: { createdAt: "desc" }

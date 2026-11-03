@@ -18,16 +18,29 @@ export const DEFAULT_SOS_CONFIG: SosConfig = {
 }
 
 function getNoticeTitle(elderId: string): string {
-  return `__SOS_CONFIG_${elderId}__`
+  return `__SYSTEM_SOS_CONFIG_${elderId}__`
 }
 
 export async function getSosConfig(elderId: string): Promise<SosConfig> {
   if (!elderId) return DEFAULT_SOS_CONFIG
 
   try {
-    const notice = await prisma.notice.findFirst({
+    // Check new system title or legacy title and auto-migrate
+    let notice = await prisma.notice.findFirst({
       where: { title: getNoticeTitle(elderId) }
     })
+
+    if (!notice) {
+      const legacyNotice = await prisma.notice.findFirst({
+        where: { title: `__SOS_CONFIG_${elderId}__` }
+      })
+      if (legacyNotice) {
+        notice = await prisma.notice.update({
+          where: { id: legacyNotice.id },
+          data: { title: getNoticeTitle(elderId) }
+        }).catch(() => legacyNotice)
+      }
+    }
 
     if (!notice || !notice.content) {
       return DEFAULT_SOS_CONFIG
