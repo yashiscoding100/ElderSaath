@@ -34,7 +34,6 @@ const NAV_ITEMS = [
   { name: "Documents", href: "/child/documents", icon: Files },
   { name: "Test Reports", href: "/child/lab-reports", icon: FlaskConical },
     { name: "Care Team", href: "/child/team", icon: Users },
-  { name: "Emergency Center", href: "/child/emergency", icon: AlertTriangle },
   { name: "Settings", href: "/child/settings", icon: Settings },
 ]
 

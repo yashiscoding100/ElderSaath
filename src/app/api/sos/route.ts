@@ -115,7 +115,7 @@ export async function POST(req: Request) {
             label: `🚨 EMERGENCY SOS: ${elderName}!`,
             body: alertBody,
             actionText: "RESPOND TO EMERGENCY",
-            url: "/child/emergency",
+            url: "/child/dashboard",
             elderId: targetElderId,
             stickyNotification: "true"
           })

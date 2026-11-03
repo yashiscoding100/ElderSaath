@@ -41,7 +41,7 @@ export async function GET(req: Request) {
           await sendPushNotification(rel.childId, {
             title: `URGENT: SOS Escalation Level ${expectedLevel}`,
             body: `${emergency.elder.name}'s SOS alarm is unacknowledged!`,
-            url: "/child/emergency"
+            url: "/child/dashboard"
           })
         }
 
