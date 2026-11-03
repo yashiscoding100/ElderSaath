@@ -1,21 +1,8 @@
 import { prisma } from "@/lib/prisma"
 import { sendPushNotification } from "@/lib/push"
+import { SosConfig, DEFAULT_SOS_CONFIG } from "./sosConfigTypes"
 
-export interface SosConfig {
-  ambulanceNumber: string
-  sosCallAmbulance: boolean
-  sosAlertFamily: boolean
-  sosLocalSiren: boolean
-  sosCustomPhone: string
-}
-
-export const DEFAULT_SOS_CONFIG: SosConfig = {
-  ambulanceNumber: "108",
-  sosCallAmbulance: true,
-  sosAlertFamily: true,
-  sosLocalSiren: true,
-  sosCustomPhone: ""
-}
+export * from "./sosConfigTypes"
 
 function getNoticeTitle(elderId: string): string {
   return `__SYSTEM_SOS_CONFIG_${elderId}__`
@@ -25,7 +12,6 @@ export async function getSosConfig(elderId: string): Promise<SosConfig> {
   if (!elderId) return DEFAULT_SOS_CONFIG
 
   try {
-    // Check new system title or legacy title and auto-migrate
     let notice = await prisma.notice.findFirst({
       where: { title: getNoticeTitle(elderId) }
     })
@@ -55,9 +41,19 @@ export async function getSosConfig(elderId: string): Promise<SosConfig> {
     return {
       ambulanceNumber: parsed.ambulanceNumber || DEFAULT_SOS_CONFIG.ambulanceNumber,
       sosCallAmbulance: parsed.sosCallAmbulance !== false,
+      sosCallTarget: parsed.sosCallTarget || DEFAULT_SOS_CONFIG.sosCallTarget,
+      sosCustomPhone: parsed.sosCustomPhone || "",
+
       sosAlertFamily: parsed.sosAlertFamily !== false,
       sosLocalSiren: parsed.sosLocalSiren !== false,
-      sosCustomPhone: parsed.sosCustomPhone || ""
+      sosSirenMode: parsed.sosSirenMode || DEFAULT_SOS_CONFIG.sosSirenMode,
+      sosStrobeFlashlight: parsed.sosStrobeFlashlight !== false,
+
+      sosShareLocation: parsed.sosShareLocation !== false,
+      sosShareBattery: parsed.sosShareBattery !== false,
+      sosIncludeMedicalId: parsed.sosIncludeMedicalId !== false,
+
+      sosCountdownSeconds: typeof parsed.sosCountdownSeconds === "number" ? parsed.sosCountdownSeconds : DEFAULT_SOS_CONFIG.sosCountdownSeconds
     }
   } catch (err) {
     console.error("[getSosConfig] Error:", err)
@@ -72,9 +68,19 @@ export async function saveSosConfig(elderId: string, partial: Partial<SosConfig>
   const merged: SosConfig = {
     ambulanceNumber: partial.ambulanceNumber !== undefined ? partial.ambulanceNumber : current.ambulanceNumber,
     sosCallAmbulance: partial.sosCallAmbulance !== undefined ? Boolean(partial.sosCallAmbulance) : current.sosCallAmbulance,
+    sosCallTarget: partial.sosCallTarget !== undefined ? partial.sosCallTarget : current.sosCallTarget,
+    sosCustomPhone: partial.sosCustomPhone !== undefined ? partial.sosCustomPhone : current.sosCustomPhone,
+
     sosAlertFamily: partial.sosAlertFamily !== undefined ? Boolean(partial.sosAlertFamily) : current.sosAlertFamily,
     sosLocalSiren: partial.sosLocalSiren !== undefined ? Boolean(partial.sosLocalSiren) : current.sosLocalSiren,
-    sosCustomPhone: partial.sosCustomPhone !== undefined ? partial.sosCustomPhone : current.sosCustomPhone
+    sosSirenMode: partial.sosSirenMode !== undefined ? partial.sosSirenMode : current.sosSirenMode,
+    sosStrobeFlashlight: partial.sosStrobeFlashlight !== undefined ? Boolean(partial.sosStrobeFlashlight) : current.sosStrobeFlashlight,
+
+    sosShareLocation: partial.sosShareLocation !== undefined ? Boolean(partial.sosShareLocation) : current.sosShareLocation,
+    sosShareBattery: partial.sosShareBattery !== undefined ? Boolean(partial.sosShareBattery) : current.sosShareBattery,
+    sosIncludeMedicalId: partial.sosIncludeMedicalId !== undefined ? Boolean(partial.sosIncludeMedicalId) : current.sosIncludeMedicalId,
+
+    sosCountdownSeconds: partial.sosCountdownSeconds !== undefined ? Number(partial.sosCountdownSeconds) : current.sosCountdownSeconds
   }
 
   const title = getNoticeTitle(elderId)
@@ -106,8 +112,13 @@ export async function saveSosConfig(elderId: string, partial: Partial<SosConfig>
       type: "SYNC_SETTINGS",
       ambulanceNumber: merged.ambulanceNumber,
       sosCallAmbulance: String(merged.sosCallAmbulance),
+      sosCallTarget: merged.sosCallTarget,
+      sosCustomPhone: merged.sosCustomPhone,
       sosAlertFamily: String(merged.sosAlertFamily),
       sosLocalSiren: String(merged.sosLocalSiren),
+      sosSirenMode: merged.sosSirenMode,
+      sosStrobeFlashlight: String(merged.sosStrobeFlashlight),
+      sosCountdownSeconds: String(merged.sosCountdownSeconds),
       elderId
     })
   } catch (pushErr) {

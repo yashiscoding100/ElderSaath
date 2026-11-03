@@ -46,8 +46,13 @@ public class AlarmSyncPlugin extends Plugin {
         try {
             String ambulanceNumber = call.getString("ambulanceNumber", "108");
             Boolean callAmbulance = call.getBoolean("sosCallAmbulance", true);
+            String callTarget = call.getString("sosCallTarget", "AMBULANCE");
+            String customPhone = call.getString("sosCustomPhone", "");
             Boolean alertFamily = call.getBoolean("sosAlertFamily", true);
             Boolean localSiren = call.getBoolean("sosLocalSiren", true);
+            String sirenMode = call.getString("sosSirenMode", "LOUD");
+            Boolean strobeFlashlight = call.getBoolean("sosStrobeFlashlight", true);
+            Integer countdownSeconds = call.getInt("sosCountdownSeconds", 3);
             String elderId = call.getString("elderId", "");
             String elderName = call.getString("elderName", "Elder");
 
@@ -55,8 +60,13 @@ public class AlarmSyncPlugin extends Plugin {
             prefs.edit()
                 .putString("sos_ambulance_number", ambulanceNumber)
                 .putBoolean("sos_call_ambulance", callAmbulance != null ? callAmbulance : true)
+                .putString("sos_call_target", callTarget != null ? callTarget : "AMBULANCE")
+                .putString("sos_custom_phone", customPhone != null ? customPhone : "")
                 .putBoolean("sos_alert_family", alertFamily != null ? alertFamily : true)
                 .putBoolean("sos_local_siren", localSiren != null ? localSiren : true)
+                .putString("sos_siren_mode", sirenMode != null ? sirenMode : "LOUD")
+                .putBoolean("sos_strobe_flashlight", strobeFlashlight != null ? strobeFlashlight : true)
+                .putInt("sos_countdown_seconds", countdownSeconds != null ? countdownSeconds : 3)
                 .putString("elder_id", elderId)
                 .putString("elder_name", elderName)
                 .apply();
@@ -65,11 +75,48 @@ public class AlarmSyncPlugin extends Plugin {
 
             JSObject ret = new JSObject();
             ret.put("success", true);
-            Log.i(TAG, "SOS settings synced to widget: ambulance=" + ambulanceNumber + ", dial=" + callAmbulance);
+            Log.i(TAG, "Advanced SOS settings synced to widget: ambulance=" + ambulanceNumber + ", target=" + callTarget);
             call.resolve(ret);
         } catch (Exception e) {
             Log.e(TAG, "Failed to sync SOS settings", e);
             call.reject("Failed to sync SOS settings: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void strobeFlashlight(PluginCall call) {
+        final int durationSec = call.getInt("duration", 15);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                android.hardware.camera2.CameraManager camManager = 
+                    (android.hardware.camera2.CameraManager) getContext().getSystemService(Context.CAMERA_SERVICE);
+                if (camManager != null) {
+                    String[] ids = camManager.getCameraIdList();
+                    if (ids.length > 0) {
+                        final String camId = ids[0];
+                        new Thread(() -> {
+                            long end = System.currentTimeMillis() + (durationSec * 1000L);
+                            try {
+                                while (System.currentTimeMillis() < end) {
+                                    camManager.setTorchMode(camId, true);
+                                    Thread.sleep(220);
+                                    camManager.setTorchMode(camId, false);
+                                    Thread.sleep(180);
+                                }
+                            } catch (Exception ignored) {
+                            } finally {
+                                try { camManager.setTorchMode(camId, false); } catch (Exception ignored) {}
+                            }
+                        }).start();
+                        call.resolve();
+                        return;
+                    }
+                }
+            }
+            call.resolve();
+        } catch (Exception e) {
+            Log.w(TAG, "Flashlight strobe not supported or failed: " + e.getMessage());
+            call.resolve();
         }
     }
 

@@ -57,9 +57,14 @@ export default async function EmergencyCenter() {
       where: { elderId: rel.elderId }
     })
 
+    const profile = await prisma.elderProfile.findUnique({
+      where: { userId: rel.elderId }
+    })
+
     return {
       emergency,
       elder: rel.elder,
+      profile,
       recentVitals,
       medications,
       contacts
@@ -89,7 +94,7 @@ export default async function EmergencyCenter() {
         </div>
       ) : (
         <div className="space-y-8">
-          {emergencies.map(({ emergency, elder, recentVitals, medications, contacts }) => (
+          {emergencies.map(({ emergency, elder, profile, recentVitals, medications, contacts }) => (
             <div key={emergency.id} className="bg-white rounded-xl shadow-sm border border-red-200 overflow-hidden">
               <div className="bg-red-50 p-6 border-b border-red-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div className="flex items-center gap-4">
@@ -175,6 +180,32 @@ export default async function EmergencyCenter() {
                       <p className="text-sm text-slate-500">No active medications.</p>
                     )}
                   </div>
+
+                  {profile && (profile.bloodGroup || profile.allergies || profile.medicalConditions) && (
+                    <div className="bg-red-50 p-4 rounded-xl border border-red-200 space-y-2">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-red-800">
+                        🚨 Emergency Medical ID
+                      </h4>
+                      {profile.bloodGroup && (
+                        <div className="text-xs text-slate-700 flex justify-between">
+                          <span className="font-semibold text-slate-500">Blood Group:</span>
+                          <span className="font-bold text-red-700">{profile.bloodGroup}</span>
+                        </div>
+                      )}
+                      {profile.allergies && (
+                        <div className="text-xs text-slate-700">
+                          <span className="font-semibold text-slate-500 block">Allergies:</span>
+                          <span className="font-bold text-slate-900">{profile.allergies}</span>
+                        </div>
+                      )}
+                      {profile.medicalConditions && (
+                        <div className="text-xs text-slate-700">
+                          <span className="font-semibold text-slate-500 block">Conditions:</span>
+                          <span className="font-bold text-slate-900">{profile.medicalConditions}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Status Column */}

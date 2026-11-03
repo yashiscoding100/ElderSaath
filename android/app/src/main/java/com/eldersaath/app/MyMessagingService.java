@@ -44,16 +44,28 @@ public class MyMessagingService extends MessagingService {
             Log.i("ALARM_DEBUG", "FCM SYNC_SETTINGS RECEIVED - Updating SOS widget configuration in background");
             String ambulanceNumber = remoteMessage.getData().get("ambulanceNumber");
             String callAmbulanceStr = remoteMessage.getData().get("sosCallAmbulance");
+            String callTarget = remoteMessage.getData().get("sosCallTarget");
+            String customPhone = remoteMessage.getData().get("sosCustomPhone");
             String alertFamilyStr = remoteMessage.getData().get("sosAlertFamily");
             String localSirenStr = remoteMessage.getData().get("sosLocalSiren");
+            String sirenMode = remoteMessage.getData().get("sosSirenMode");
+            String strobeFlashlightStr = remoteMessage.getData().get("sosStrobeFlashlight");
+            String countdownSecondsStr = remoteMessage.getData().get("sosCountdownSeconds");
             String elderId = remoteMessage.getData().get("elderId");
 
             android.content.SharedPreferences prefs = getSharedPreferences("ElderSaathAlarms", Context.MODE_PRIVATE);
             android.content.SharedPreferences.Editor editor = prefs.edit();
             if (ambulanceNumber != null) editor.putString("sos_ambulance_number", ambulanceNumber);
             if (callAmbulanceStr != null) editor.putBoolean("sos_call_ambulance", "true".equalsIgnoreCase(callAmbulanceStr));
+            if (callTarget != null) editor.putString("sos_call_target", callTarget);
+            if (customPhone != null) editor.putString("sos_custom_phone", customPhone);
             if (alertFamilyStr != null) editor.putBoolean("sos_alert_family", "true".equalsIgnoreCase(alertFamilyStr));
             if (localSirenStr != null) editor.putBoolean("sos_local_siren", "true".equalsIgnoreCase(localSirenStr));
+            if (sirenMode != null) editor.putString("sos_siren_mode", sirenMode);
+            if (strobeFlashlightStr != null) editor.putBoolean("sos_strobe_flashlight", "true".equalsIgnoreCase(strobeFlashlightStr));
+            if (countdownSecondsStr != null) {
+                try { editor.putInt("sos_countdown_seconds", Integer.parseInt(countdownSecondsStr)); } catch (Exception ignored) {}
+            }
             if (elderId != null) editor.putString("elder_id", elderId);
             editor.apply();
 

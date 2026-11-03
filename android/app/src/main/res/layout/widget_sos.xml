@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/sos_widget_bg"
-    android:padding="8dp">
+    android:padding="10dp">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -12,32 +12,38 @@
         android:gravity="center"
         android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/sos_badge_text"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="🚨 SOS"
-            android:textColor="#FFFFFF"
-            android:textSize="26sp"
-            android:textStyle="bold" />
-
+        <!-- Top Status Indicator -->
         <TextView
             android:id="@+id/sos_subtitle_text"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:text="EMERGENCY"
+            android:text="EMERGENCY SOS"
             android:textColor="#FEE2E2"
-            android:textSize="12sp"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.08" />
+
+        <!-- Giant Bold SOS Icon & Text -->
+        <TextView
+            android:id="@+id/sos_badge_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:layout_marginBottom="2dp"
+            android:text="🚨 SOS"
+            android:textColor="#FFFFFF"
+            android:textSize="28sp"
             android:textStyle="bold" />
 
+        <!-- Subtext: Active Action -->
         <TextView
             android:id="@+id/sos_call_subtext"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="Tap to Alert &amp; Call"
+            android:text="1-Tap: Call &amp; Alert Family"
             android:textColor="#FFFFFF"
-            android:textSize="10sp" />
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:gravity="center" />
     </LinearLayout>
 </RelativeLayout>

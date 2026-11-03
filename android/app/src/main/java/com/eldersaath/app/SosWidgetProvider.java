@@ -28,14 +28,17 @@ public class SosWidgetProvider extends AppWidgetProvider {
         SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
         String ambulanceNumber = prefs.getString("sos_ambulance_number", "108");
         boolean callAmbulance = prefs.getBoolean("sos_call_ambulance", true);
+        String callTarget = prefs.getString("sos_call_target", "AMBULANCE");
+        String customPhone = prefs.getString("sos_custom_phone", "");
+        String phoneToDial = "CUSTOM".equalsIgnoreCase(callTarget) && !customPhone.isEmpty() ? customPhone : ambulanceNumber;
 
         for (int appWidgetId : appWidgetIds) {
             RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_sos);
 
             if (callAmbulance) {
-                views.setTextViewText(R.id.sos_call_subtext, "Tap: Call " + ambulanceNumber + " & Alert");
+                views.setTextViewText(R.id.sos_call_subtext, "1-Tap: Call " + phoneToDial + " & Alert Family");
             } else {
-                views.setTextViewText(R.id.sos_call_subtext, "Tap to Alert Family");
+                views.setTextViewText(R.id.sos_call_subtext, "1-Tap: Alert Family Siren");
             }
 
             Intent intent = new Intent(context, SosWidgetProvider.class);
@@ -65,8 +68,12 @@ public class SosWidgetProvider extends AppWidgetProvider {
         SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
         String ambulanceNumber = prefs.getString("sos_ambulance_number", "108");
         boolean callAmbulance = prefs.getBoolean("sos_call_ambulance", true);
+        String callTarget = prefs.getString("sos_call_target", "AMBULANCE");
+        String customPhone = prefs.getString("sos_custom_phone", "");
         boolean alertFamily = prefs.getBoolean("sos_alert_family", true);
         boolean localSiren = prefs.getBoolean("sos_local_siren", true);
+        String sirenMode = prefs.getString("sos_siren_mode", "LOUD");
+        boolean strobeFlashlight = prefs.getBoolean("sos_strobe_flashlight", true);
         String elderId = prefs.getString("elder_id", "");
         String elderName = prefs.getString("elder_name", "Elder");
 
@@ -84,8 +91,33 @@ public class SosWidgetProvider extends AppWidgetProvider {
             Log.w(TAG, "Could not acquire WakeLock", e);
         }
 
-        // 2. Local Siren on this device (if enabled in settings)
-        if (localSiren) {
+        // 2. Hardware Camera Flashlight Strobe (Distress Beacon)
+        if (strobeFlashlight) {
+            new Thread(() -> {
+                try {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                        android.hardware.camera2.CameraManager camManager = 
+                            (android.hardware.camera2.CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
+                        if (camManager != null) {
+                            String[] ids = camManager.getCameraIdList();
+                            if (ids.length > 0) {
+                                String camId = ids[0];
+                                long end = System.currentTimeMillis() + 15000L; // 15 seconds
+                                while (System.currentTimeMillis() < end) {
+                                    camManager.setTorchMode(camId, true);
+                                    Thread.sleep(220);
+                                    camManager.setTorchMode(camId, false);
+                                    Thread.sleep(180);
+                                }
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }).start();
+        }
+
+        // 3. Local Siren on this device (if enabled and set to LOUD)
+        if (localSiren && !"SILENT".equalsIgnoreCase(sirenMode)) {
             try {
                 Intent alarmIntent = new Intent(context, AlarmActivity.class);
                 alarmIntent.addFlags(
@@ -97,7 +129,7 @@ public class SosWidgetProvider extends AppWidgetProvider {
                 alarmIntent.putExtra("body", "Emergency alert is sounding. Contacting ambulance and family members.");
                 alarmIntent.putExtra("actionText", "I AM SAFE / STOP ALARM");
                 alarmIntent.putExtra("snoozeText", "Snooze 5 mins");
-                alarmIntent.putExtra("snoozeDuration", "5");
+                alarmIntent.putExtra("snoozeDuration", 5);
                 alarmIntent.putExtra("stickyNotification", true);
                 context.startActivity(alarmIntent);
             } catch (Exception e) {
@@ -105,9 +137,11 @@ public class SosWidgetProvider extends AppWidgetProvider {
             }
         }
 
-        // 3. Immediately Place Call to Ambulance via Native Phone Dialer
+        // 4. Immediately Place Call via Native Phone Dialer
         if (callAmbulance) {
-            String phone = (ambulanceNumber != null && !ambulanceNumber.trim().isEmpty()) ? ambulanceNumber : "108";
+            String phone = ("CUSTOM".equalsIgnoreCase(callTarget) && !customPhone.trim().isEmpty())
+                ? customPhone
+                : (ambulanceNumber != null && !ambulanceNumber.trim().isEmpty() ? ambulanceNumber : "108");
             try {
                 if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M ||
                     context.checkSelfPermission(android.Manifest.permission.CALL_PHONE) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
@@ -116,7 +150,7 @@ public class SosWidgetProvider extends AppWidgetProvider {
                     callIntent.setData(Uri.parse("tel:" + phone));
                     callIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     context.startActivity(callIntent);
-                    Log.i(TAG, "Direct ambulance call placed immediately to: " + phone);
+                    Log.i(TAG, "Direct call placed immediately to: " + phone);
                 } else {
                     Intent dialIntent = new Intent(Intent.ACTION_DIAL);
                     dialIntent.setData(Uri.parse("tel:" + phone));
