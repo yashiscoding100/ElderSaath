@@ -2,11 +2,10 @@ package com.eldersaath.app;
 
 import android.app.Activity;
 import android.app.AlarmManager;
-import android.app.KeyguardManager;
+import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Color;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
@@ -17,49 +16,63 @@ import android.os.Bundle;
 import android.os.PowerManager;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
-import android.view.Gravity;
+import android.util.Log;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
-import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
 public class AlarmActivity extends Activity {
+    private static final String TAG = "AlarmActivity";
+    public static volatile AlarmActivity currentInstance = null;
+
     private MediaPlayer mediaPlayer;
     private Vibrator vibrator;
     private PowerManager.WakeLock wakeLock;
 
+    public static void stopCurrentAlarm(Context context) {
+        try {
+            if (currentInstance != null) {
+                currentInstance.stopAlarmAndSound();
+                currentInstance.finish();
+                currentInstance = null;
+            }
+            if (context != null) {
+                NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+                if (nm != null) {
+                    nm.cancelAll();
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error in stopCurrentAlarm", e);
+        }
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        currentInstance = this;
 
-        // 1. Force the screen ON, show over lockscreen, dismiss keyguard
+        // 1. Force the screen ON and display cleanly over Samsung lockscreen
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true);
             setTurnScreenOn(true);
-            try {
-                KeyguardManager km = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
-                if (km != null) {
-                    km.requestDismissKeyguard(this, null);
-                }
-            } catch (Exception ignored) {}
         }
 
         getWindow().addFlags(
             WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
-            WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD |
-            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
             WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON |
-            WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
         );
 
-        // 2. Keep CPU and Screen alive while alarm is ringing
+        // 2. Keep CPU and Screen awake while alarm is ringing
         try {
             PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
             if (pm != null) {
                 wakeLock = pm.newWakeLock(
-                    PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE,
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE,
                     "ElderSaath::AlarmActivityWake"
                 );
                 wakeLock.acquire(5 * 60 * 1000L); // 5 mins max
@@ -75,14 +88,6 @@ public class AlarmActivity extends Activity {
         
         String body = getIntent().getStringExtra("body");
         if (body == null) body = "Please take your medications on time.";
-
-        boolean stickyNotification = getIntent().getBooleanExtra("stickyNotification", true);
-        if (!stickyNotification) {
-            try {
-                android.app.NotificationManager notificationManager = (android.app.NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                notificationManager.cancel(99999);
-            } catch (Exception ignored) {}
-        }
 
         String snoozeText = getIntent().getStringExtra("snoozeText");
         if (snoozeText == null || snoozeText.isEmpty()) snoozeText = "I'll take the medicines later";
@@ -134,11 +139,23 @@ public class AlarmActivity extends Activity {
         }
         snoozeBtn.setText(displaySnooze);
 
-        stopBtn.setOnClickListener(new View.OnClickListener() {
+        // Immediate responsive click and touch handling for Samsung lockscreen wakeup
+        View.OnClickListener stopClickListener = new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 stopAlarmAndSound();
                 finish();
+            }
+        };
+        stopBtn.setOnClickListener(stopClickListener);
+        stopBtn.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                if (event.getAction() == MotionEvent.ACTION_UP) {
+                    v.performClick();
+                    return true;
+                }
+                return false;
             }
         });
 
@@ -148,7 +165,7 @@ public class AlarmActivity extends Activity {
         final String finalSnoozeText = snoozeText;
         final String finalElderId = elderId;
         
-        snoozeBtn.setOnClickListener(new View.OnClickListener() {
+        View.OnClickListener snoozeClickListener = new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 stopAlarmAndSound();
@@ -214,15 +231,26 @@ public class AlarmActivity extends Activity {
 
                 finish();
             }
+        };
+        snoozeBtn.setOnClickListener(snoozeClickListener);
+        snoozeBtn.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                if (event.getAction() == MotionEvent.ACTION_UP) {
+                    v.performClick();
+                    return true;
+                }
+                return false;
+            }
         });
 
-        // 5. Start Continuous Sound and Aggressive Vibration
+        // 5. Start Single Continuous Sound and Aggressive Vibration
         startAlarmSoundAndVibration();
     }
 
     private void startAlarmSoundAndVibration() {
         try {
-            // Audio via MediaPlayer (Continuous Loop on ALARM channel)
+            // Audio via MediaPlayer (Single Continuous Loop on ALARM channel)
             Uri alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
             if (alarmUri == null) {
                 alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
@@ -242,7 +270,7 @@ public class AlarmActivity extends Activity {
             mediaPlayer.prepare();
             mediaPlayer.start();
         } catch (Exception e) {
-            // Fallback to RingtoneManager if MediaPlayer fails
+            Log.w(TAG, "MediaPlayer failed, using RingtoneManager fallback", e);
             try {
                 Uri alarm = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
                 android.media.Ringtone fallbackRingtone = RingtoneManager.getRingtone(getApplicationContext(), alarm);
@@ -264,7 +292,7 @@ public class AlarmActivity extends Activity {
         } catch (Exception ignored) {}
     }
 
-    private void stopAlarmAndSound() {
+    public void stopAlarmAndSound() {
         try {
             if (mediaPlayer != null) {
                 if (mediaPlayer.isPlaying()) mediaPlayer.stop();
@@ -285,11 +313,21 @@ public class AlarmActivity extends Activity {
                 wakeLock = null;
             }
         } catch (Exception ignored) {}
+
+        try {
+            NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (notificationManager != null) {
+                notificationManager.cancelAll();
+            }
+        } catch (Exception ignored) {}
     }
 
     @Override
     protected void onDestroy() {
         stopAlarmAndSound();
+        if (currentInstance == this) {
+            currentInstance = null;
+        }
         super.onDestroy();
     }
 }

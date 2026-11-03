@@ -53,6 +53,8 @@
         <receiver android:name=".LocalAlarmReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="com.eldersaath.app.ACTION_LOCAL_ALARM" />
+                <action android:name="com.eldersaath.app.ACTION_STOP_ALARM" />
+                <action android:name="com.eldersaath.app.ACTION_SNOOZE_ALARM" />
             </intent-filter>
         </receiver>
 

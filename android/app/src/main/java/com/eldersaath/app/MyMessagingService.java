@@ -6,9 +6,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
-import android.media.AudioAttributes;
-import android.media.RingtoneManager;
-import android.net.Uri;
+import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.PowerManager;
 import android.util.Log;
@@ -53,8 +51,8 @@ public class MyMessagingService extends MessagingService {
             String countdownSecondsStr = remoteMessage.getData().get("sosCountdownSeconds");
             String elderId = remoteMessage.getData().get("elderId");
 
-            android.content.SharedPreferences prefs = getSharedPreferences("ElderSaathAlarms", Context.MODE_PRIVATE);
-            android.content.SharedPreferences.Editor editor = prefs.edit();
+            SharedPreferences prefs = getSharedPreferences("ElderSaathAlarms", Context.MODE_PRIVATE);
+            SharedPreferences.Editor editor = prefs.edit();
             if (ambulanceNumber != null) editor.putString("sos_ambulance_number", ambulanceNumber);
             if (callAmbulanceStr != null) editor.putBoolean("sos_call_ambulance", "true".equalsIgnoreCase(callAmbulanceStr));
             if (callTarget != null) editor.putString("sos_call_target", callTarget);
@@ -81,8 +79,24 @@ public class MyMessagingService extends MessagingService {
                 return;
             }
             lastAlarmTime = now;
+
+            // Shared deduplication with hardware alarm to prevent double ringing
+            SharedPreferences prefs = getSharedPreferences("ElderSaathAlarms", Context.MODE_PRIVATE);
+            long lastHardwareFired = prefs.getLong("last_alarm_fired_timestamp", 0);
+            String lastMedId = prefs.getString("last_alarm_fired_med_id", "");
+            String incomingMedId = remoteMessage.getData().get("medicationId");
+
+            if (incomingMedId != null && incomingMedId.equals(lastMedId) && (now - lastHardwareFired) < 45000) {
+                Log.i("ALARM_DEBUG", "FCM alarm suppressed: Local hardware alarm already fired " + (now - lastHardwareFired) + "ms ago");
+                return;
+            }
+
+            prefs.edit()
+                .putLong("last_alarm_fired_timestamp", now)
+                .putString("last_alarm_fired_med_id", incomingMedId != null ? incomingMedId : "FCM_ALARM")
+                .apply();
             
-            Log.e("ALARM_DEBUG", "FCM ALARM RECEIVED - FIRING AGGRESSIVE WAKEUP");
+            Log.e("ALARM_DEBUG", "FCM ALARM RECEIVED - FIRING WAKEUP");
             
             String label = remoteMessage.getData().get("label");
             if (label == null) label = "EMERGENCY ALARM";
@@ -106,22 +120,22 @@ public class MyMessagingService extends MessagingService {
                 PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
                 if (powerManager != null) {
                     PowerManager.WakeLock wakeLock = powerManager.newWakeLock(
-                        PowerManager.FULL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE, 
+                        PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE, 
                         "ElderSaath::HyperAlarmWakeLock"
                     );
                     wakeLock.acquire(3 * 60 * 1000L); // 3 minutes
                 }
                 
-                // 2. High-Priority Alarm Notification Channel
+                // 2. High-Priority Alarm Notification Channel (Silent on Notification Channel so only AlarmActivity plays audio!)
                 NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                String channelId = "whatsapp_style_alarms";
-                Uri alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
-                if (alarmSound == null) {
-                    alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
-                }
-                long[] vibrationPattern = new long[]{0, 1000, 500, 1000, 500, 1000};
+                String channelId = "eldersaath_fullscreen_alarms_v2";
+                long[] vibrationPattern = new long[]{0, 800, 400, 800, 400, 800};
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    try {
+                        notificationManager.deleteNotificationChannel("whatsapp_style_alarms"); // delete old channel with sound cache
+                    } catch (Exception ignored) {}
+
                     NotificationChannel channel = new NotificationChannel(
                             channelId,
                             "Emergency Alarms",
@@ -132,11 +146,7 @@ public class MyMessagingService extends MessagingService {
                     channel.setBypassDnd(true);
                     channel.enableVibration(true);
                     channel.setVibrationPattern(vibrationPattern);
-                    AudioAttributes audioAttributes = new AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_ALARM)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                            .build();
-                    channel.setSound(alarmSound, audioAttributes);
+                    channel.setSound(null, null); // SILENT: Audio is owned by AlarmActivity MediaPlayer
                     notificationManager.createNotificationChannel(channel);
                 }
 
@@ -172,6 +182,16 @@ public class MyMessagingService extends MessagingService {
 
                 int ALARM_NOTIFICATION_ID = 99999;
 
+                // Stop Intent for notification action button and swipe-to-dismiss delete intent
+                Intent stopIntent = new Intent(this, LocalAlarmReceiver.class);
+                stopIntent.setAction(LocalAlarmReceiver.ACTION_STOP_ALARM);
+                PendingIntent stopPendingIntent = PendingIntent.getBroadcast(
+                    this,
+                    99125,
+                    stopIntent,
+                    flags
+                );
+
                 NotificationCompat.Builder builder = new NotificationCompat.Builder(this, channelId)
                         .setSmallIcon(android.R.drawable.ic_dialog_alert)
                         .setContentTitle(remoteMessage.getData().containsKey("actionText") ? remoteMessage.getData().get("actionText") : "ALARM")
@@ -179,35 +199,29 @@ public class MyMessagingService extends MessagingService {
                         .setPriority(NotificationCompat.PRIORITY_MAX)
                         .setCategory(NotificationCompat.CATEGORY_ALARM)
                         .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                        .setSound(alarmSound)
+                        .setSilent(true)
                         .setVibrate(vibrationPattern)
                         .setFullScreenIntent(fullScreenPendingIntent, true)
+                        .setContentIntent(fullScreenPendingIntent)
+                        .setDeleteIntent(stopPendingIntent) // Dismissing notification on lockscreen stops alarm sound!
+                        .addAction(android.R.drawable.ic_menu_close_clear_cancel, "STOP ALARM", stopPendingIntent)
                         .setAutoCancel(true)
-                        .setOngoing(showSticky);
+                        .setOngoing(false);
 
                 notificationManager.notify(ALARM_NOTIFICATION_ID, builder.build());
-                Log.e("ALARM_DEBUG", "Notification Fired with FullScreenIntent! Sticky: " + showSticky);
+                Log.e("ALARM_DEBUG", "Notification Fired with FullScreenIntent!");
                 
                 // 4. AGGRESSIVELY FORCE LAUNCH ACTIVITY DIRECTLY
                 try {
                     startActivity(fullScreenIntent);
                     Log.e("ALARM_DEBUG", "Direct startActivity succeeded!");
                 } catch (Exception e1) {
-                    try {
-                        getApplicationContext().startActivity(fullScreenIntent);
-                        Log.e("ALARM_DEBUG", "ApplicationContext startActivity succeeded!");
-                    } catch (Exception e2) {
-                        Log.e("ALARM_DEBUG", "Could not force background startActivity: " + e2.getMessage());
-                    }
+                    Log.e("ALARM_DEBUG", "Direct startActivity failed on this OEM (Android 10+ background restriction). FullScreenIntent will wake device.");
                 }
-                
+
             } catch (Exception e) {
-                Log.e("ALARM_DEBUG", "FATAL CRASH IN JAVA: " + e.getMessage());
-                e.printStackTrace();
+                Log.e("ALARM_DEBUG", "Error triggering alarm notification", e);
             }
-        } else {
-            super.onMessageReceived(remoteMessage);
-            Log.e("ALARM_DEBUG", "Received normal push, passed to Capacitor.");
         }
     }
 }
