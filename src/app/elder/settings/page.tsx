@@ -5,6 +5,7 @@ import { ScheduleSettings } from "./ScheduleSettings"
 import { EditProfileForm } from "@/app/child/settings/EditProfileForm"
 import { ElderPushSettings } from "./ElderPushSettings"
 import { ElderAlarmPreferences } from "./ElderAlarmPreferences"
+import { SosSettingsCard } from "@/components/SosSettingsCard"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 
@@ -28,11 +29,14 @@ export default async function ElderSettings() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Your Settings</h1>
-            <p className="text-sm text-slate-500 mt-1">Manage your profile and app preferences.</p>
+            <p className="text-sm text-slate-500 mt-1">Manage your profile and emergency preferences.</p>
           </div>
         </div>
 
         <div className="divide-y divide-slate-100">
+          <div className="p-6">
+            <SosSettingsCard />
+          </div>
           <EditProfileForm 
             initialName={session.user.name || ""} 
             initialEmail={session.user.email || ""} 

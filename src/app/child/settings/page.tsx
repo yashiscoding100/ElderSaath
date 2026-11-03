@@ -6,7 +6,7 @@ import { EditProfileForm } from "./EditProfileForm"
 import { PushNotificationSettings } from "./PushNotificationSettings"
 import { HealthParameterSettings } from "./HealthParameterSettings"
 import { ElderAlarmSettings } from "./ElderAlarmSettings"
-import { MedicalProfileCard } from "@/components/MedicalProfileCard"
+import { SosSettingsCard } from "@/components/SosSettingsCard"
 import { PushSubscriptionManager } from "@/components/PushSubscriptionManager"
 
 export default async function ChildSettings() {
@@ -18,15 +18,12 @@ export default async function ChildSettings() {
 
   const relationship = await getActiveElder(session.user.id)
   
-  // Safe fetch for ElderProfile - don't crash if it doesn't exist yet
-  const elderProfile = relationship?.elder?.elderProfile || null
-
   return (
     <div className="space-y-6">
       <header className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Account Settings</h1>
-          <p className="text-sm text-slate-500 mt-1">Manage your profile and notification preferences.</p>
+          <p className="text-sm text-slate-500 mt-1">Manage your profile, emergency rules, and notification preferences.</p>
         </div>
         <PushSubscriptionManager />
       </header>
@@ -39,21 +36,24 @@ export default async function ChildSettings() {
         <PushNotificationSettings />
         {relationship && (
           <>
+            <div className="p-6">
+              <SosSettingsCard elderId={relationship.elderId} isChild={true} />
+            </div>
             <HealthParameterSettings 
-            elderId={relationship.elderId}
-            elderName={relationship.elder.name || "Elder"}
-            initialVitals={relationship.elder.elderProfile?.requiredVitals || "BP,SUGAR,SPO2,PULSE,TEMP,WEIGHT"}
-            initialAskSymptoms={relationship.elder.elderProfile?.askSymptoms ?? true}
-          />
-          <ElderAlarmSettings 
-            elderId={relationship.elderId}
-            elderName={relationship.elder.name || "Elder"}
-            initialSnoozeText={relationship.elder.alarmSnoozeText || "Take later"}
-            initialSnoozeDuration={relationship.elder.alarmSnoozeDuration || 10}
-            initialSosEnabled={relationship.elder.sosEnabled || false}
-            initialCanManageMeds={relationship.elder.canManageMeds || false}
+              elderId={relationship.elderId}
+              elderName={relationship.elder.name || "Elder"}
+              initialVitals={relationship.elder.elderProfile?.requiredVitals || "BP,SUGAR,SPO2,PULSE,TEMP,WEIGHT"}
+              initialAskSymptoms={relationship.elder.elderProfile?.askSymptoms ?? true}
+            />
+            <ElderAlarmSettings 
+              elderId={relationship.elderId}
+              elderName={relationship.elder.name || "Elder"}
+              initialSnoozeText={relationship.elder.alarmSnoozeText || "Take later"}
+              initialSnoozeDuration={relationship.elder.alarmSnoozeDuration || 10}
+              initialSosEnabled={relationship.elder.sosEnabled || false}
+              initialCanManageMeds={relationship.elder.canManageMeds || false}
               initialStickyAlarmNotification={relationship.elder.elderProfile?.stickyAlarmNotification ?? true}
-          />
+            />
           </>
         )}
       </div>

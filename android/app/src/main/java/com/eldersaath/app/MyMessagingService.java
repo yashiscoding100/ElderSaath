@@ -39,6 +39,28 @@ public class MyMessagingService extends MessagingService {
             return;
         }
 
+        // 2. SILENT BACKGROUND SYNC: Update offline SOS widget settings
+        if (remoteMessage.getData().size() > 0 && "SYNC_SETTINGS".equals(remoteMessage.getData().get("type"))) {
+            Log.i("ALARM_DEBUG", "FCM SYNC_SETTINGS RECEIVED - Updating SOS widget configuration in background");
+            String ambulanceNumber = remoteMessage.getData().get("ambulanceNumber");
+            String callAmbulanceStr = remoteMessage.getData().get("sosCallAmbulance");
+            String alertFamilyStr = remoteMessage.getData().get("sosAlertFamily");
+            String localSirenStr = remoteMessage.getData().get("sosLocalSiren");
+            String elderId = remoteMessage.getData().get("elderId");
+
+            android.content.SharedPreferences prefs = getSharedPreferences("ElderSaathAlarms", Context.MODE_PRIVATE);
+            android.content.SharedPreferences.Editor editor = prefs.edit();
+            if (ambulanceNumber != null) editor.putString("sos_ambulance_number", ambulanceNumber);
+            if (callAmbulanceStr != null) editor.putBoolean("sos_call_ambulance", "true".equalsIgnoreCase(callAmbulanceStr));
+            if (alertFamilyStr != null) editor.putBoolean("sos_alert_family", "true".equalsIgnoreCase(alertFamilyStr));
+            if (localSirenStr != null) editor.putBoolean("sos_local_siren", "true".equalsIgnoreCase(localSirenStr));
+            if (elderId != null) editor.putString("elder_id", elderId);
+            editor.apply();
+
+            SosWidgetProvider.updateAllWidgets(this);
+            return;
+        }
+
         if (remoteMessage.getData().size() > 0 && "ALARM".equals(remoteMessage.getData().get("type"))) {
             
             long now = System.currentTimeMillis();

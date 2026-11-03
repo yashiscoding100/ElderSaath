@@ -13,35 +13,54 @@ export function MedicationAlarmSync() {
     isSyncing.current = true
 
     try {
+      // 1. Sync Medications
       const res = await fetch("/api/medications")
-      if (!res.ok) {
-        isSyncing.current = false
-        return
+      if (res.ok) {
+        const meds = await res.json()
+        if (Array.isArray(meds)) {
+          try {
+            localStorage.setItem("eldersaath_cached_medications", JSON.stringify(meds))
+            localStorage.setItem("eldersaath_meds_last_synced", new Date().toISOString())
+          } catch (e) {
+            console.warn("[MedicationAlarmSync] LocalStorage cache warning:", e)
+          }
+
+          const capacitor = (window as any).Capacitor
+          const AlarmSyncPlugin = capacitor?.Plugins?.AlarmSyncPlugin
+
+          if (AlarmSyncPlugin && typeof AlarmSyncPlugin.syncAlarms === "function") {
+            try {
+              const syncResult = await AlarmSyncPlugin.syncAlarms({ medications: meds })
+              console.log(`[MedicationAlarmSync] Synced ${syncResult?.count || meds.length} alarms directly into Android AlarmManager.`)
+            } catch (pluginErr) {
+              console.error("[MedicationAlarmSync] AlarmSyncPlugin.syncAlarms failed:", pluginErr)
+            }
+          }
+        }
       }
 
-      const meds = await res.json()
-      if (Array.isArray(meds)) {
-        // 1. Cache to local offline storage
-        try {
-          localStorage.setItem("eldersaath_cached_medications", JSON.stringify(meds))
-          localStorage.setItem("eldersaath_meds_last_synced", new Date().toISOString())
-        } catch (e) {
-          console.warn("[MedicationAlarmSync] LocalStorage cache warning:", e)
-        }
-
-        // 2. Sync with Native Android Hardware AlarmManager
-        const capacitor = (window as any).Capacitor
-        const AlarmSyncPlugin = capacitor?.Plugins?.AlarmSyncPlugin
-
-        if (AlarmSyncPlugin && typeof AlarmSyncPlugin.syncAlarms === "function") {
-          try {
-            const syncResult = await AlarmSyncPlugin.syncAlarms({ medications: meds })
-            console.log(`[MedicationAlarmSync] Synced ${syncResult?.count || meds.length} alarms directly into Android AlarmManager.`)
-          } catch (pluginErr) {
-            console.error("[MedicationAlarmSync] AlarmSyncPlugin.syncAlarms failed:", pluginErr)
+      // 2. Sync SOS Widget Settings
+      const sosRes = await fetch("/api/sos/settings")
+      if (sosRes.ok) {
+        const sosData = await sosRes.json()
+        if (sosData?.config) {
+          const capacitor = (window as any).Capacitor
+          const AlarmSyncPlugin = capacitor?.Plugins?.AlarmSyncPlugin
+          if (AlarmSyncPlugin && typeof AlarmSyncPlugin.syncSosSettings === "function") {
+            try {
+              await AlarmSyncPlugin.syncSosSettings({
+                ambulanceNumber: sosData.config.ambulanceNumber,
+                sosCallAmbulance: sosData.config.sosCallAmbulance,
+                sosAlertFamily: sosData.config.sosAlertFamily,
+                sosLocalSiren: sosData.config.sosLocalSiren,
+                elderId: session.user.id,
+                elderName: session.user.name || "Elder"
+              })
+              console.log("[MedicationAlarmSync] SOS Widget settings synced.")
+            } catch (sosErr) {
+              console.warn("[MedicationAlarmSync] SOS sync error:", sosErr)
+            }
           }
-        } else {
-          console.log("[MedicationAlarmSync] Web mode: cached", meds.length, "medications locally.")
         }
       }
     } catch (err) {
