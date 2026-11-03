@@ -4,6 +4,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { signIn } from "next-auth/react"
 import Link from "next/link"
+import { ArrowLeft } from "lucide-react"
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -50,7 +51,10 @@ export default function RegisterPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-      <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8">
+      <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 relative">
+        <Link href="/login" className="absolute left-6 top-6 p-2 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 transition" title="Back to Login">
+          <ArrowLeft className="w-5 h-5" />
+        </Link>
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-blue-600">Elder Saath</h1>
           <p className="text-gray-700 mt-2 font-medium">Because distance shouldn't mean less care.</p>

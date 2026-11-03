@@ -2,7 +2,8 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { getActiveElder } from "@/lib/activeElder"
 import { redirect } from "next/navigation"
-import { Phone, Mail, Users } from "lucide-react"
+import { Phone, Mail, Users, ArrowLeft } from "lucide-react"
+import Link from "next/link"
 import { AddProviderForm } from "./AddProviderForm"
 import { DeleteProviderButton } from "./DeleteProviderButton"
 
@@ -25,7 +26,14 @@ export default async function CareTeamPage() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      <div className="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+      <div className="flex items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+        <Link 
+          href="/child/dashboard" 
+          className="p-2.5 bg-slate-50 border border-slate-200 rounded-full hover:bg-slate-100 transition shadow-sm text-slate-700 shrink-0"
+          title="Back to Dashboard"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </Link>
         <div>
           <div className="flex items-center gap-2">
             <Users className="w-6 h-6 text-blue-600" />

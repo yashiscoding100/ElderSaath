@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import { ArrowLeft } from "lucide-react"
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("")
@@ -37,7 +38,10 @@ export default function ForgotPasswordPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 px-6">
-      <div className="max-w-md w-full mx-auto bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
+      <div className="max-w-md w-full mx-auto bg-white p-8 rounded-3xl shadow-sm border border-gray-100 relative">
+        <Link href="/login" className="absolute left-6 top-6 p-2 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 transition" title="Back to Login">
+          <ArrowLeft className="w-5 h-5" />
+        </Link>
         <h2 className="text-3xl font-black text-gray-900 text-center mb-2">Reset Password</h2>
         <p className="text-gray-500 text-center mb-8">Enter your email to receive a reset link</p>
 

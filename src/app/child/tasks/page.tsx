@@ -3,7 +3,8 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { getActiveElder } from "@/lib/activeElder"
 import { redirect } from "next/navigation"
-import { Bell } from "lucide-react"
+import { Bell, ArrowLeft } from "lucide-react"
+import Link from "next/link"
 import { DeleteTaskButton } from "./DeleteTaskButton"
 
 export default async function ChildThingsToDo() {
@@ -41,9 +42,18 @@ export default async function ChildThingsToDo() {
   return (
     <div className="space-y-6">
       <header className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Care Tasks</h1>
-          <p className="text-sm text-slate-500 mt-1">Manage reminders and things to do for {relationship.elder.name}</p>
+        <div className="flex items-center gap-3">
+          <Link 
+            href="/child/dashboard" 
+            className="p-2.5 bg-white border border-slate-200 rounded-full hover:bg-slate-100 transition shadow-sm text-slate-700 shrink-0"
+            title="Back to Dashboard"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Care Tasks</h1>
+            <p className="text-sm text-slate-500 mt-0.5">Manage reminders and things to do for {relationship.elder.name}</p>
+          </div>
         </div>
         <div className="flex gap-4 items-center">
           <AddTaskForm elderId={relationship.elderId} />

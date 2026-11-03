@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { getActiveElder } from "@/lib/activeElder"
 import { redirect } from "next/navigation"
 import Link from "next/link"
-import { Files } from "lucide-react"
+import { Files, ArrowLeft } from "lucide-react"
 import { parseLabReport, isLabReport } from "@/lib/labReportUtils"
 import { LabReportsClient } from "@/components/lab-reports/LabReportsClient"
 
@@ -55,16 +55,25 @@ export default async function ChildLabReportsPage() {
     <div className="space-y-6">
       {/* Header */}
       <header className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">🧪</span>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-              Lab & Diagnostic Test Reports
-            </h1>
+        <div className="flex items-center gap-3">
+          <Link 
+            href="/child/dashboard" 
+            className="p-2.5 bg-white border border-slate-200 rounded-full hover:bg-slate-100 transition shadow-sm text-slate-700 shrink-0"
+            title="Back to Dashboard"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">🧪</span>
+              <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+                Lab & Diagnostic Test Reports
+              </h1>
+            </div>
+            <p className="text-sm text-slate-500 mt-0.5">
+              Manage and view diagnostic records & lab test reports for {relationship.elder.name}
+            </p>
           </div>
-          <p className="text-sm text-slate-500 mt-0.5">
-            Manage and view diagnostic records & lab test reports for {relationship.elder.name}
-          </p>
         </div>
 
         {/* Tab Switcher: Prescriptions vs Test Reports */}

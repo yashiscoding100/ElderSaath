@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { ArrowLeft } from "lucide-react"
 
 const SYMPTOM_OPTIONS = [
   "Chest pressure/pain",
@@ -98,14 +99,30 @@ export default function DailyCheckin() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-6 flex flex-col justify-between">
-      {/* Progress Bar */}
-      <div className="max-w-md mx-auto w-full mb-4">
+      {/* Top Navigation & Progress Bar */}
+      <div className="max-w-md mx-auto w-full mb-4 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => {
+            if (step > (askSymptoms ? 1 : 4)) {
+              handlePrev()
+            } else {
+              router.push("/elder/home")
+            }
+          }}
+          className="p-2.5 bg-white border border-slate-200 rounded-full hover:bg-slate-100 transition shadow-sm text-slate-700 shrink-0"
+          title={step > (askSymptoms ? 1 : 4) ? "Previous Step" : "Back to Home"}
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <div className="flex-1">
         <div className="flex justify-between text-sm text-gray-500 mb-1">
           <span>Step {step} of {totalSteps}</span>
           <span>{Math.round((step / totalSteps) * 100)}%</span>
         </div>
         <div className="w-full bg-gray-200 rounded-full h-2">
           <div className="bg-blue-500 h-2 rounded-full transition-all" style={{ width: `${(step / totalSteps) * 100}%` }} />
+        </div>
         </div>
       </div>
 
