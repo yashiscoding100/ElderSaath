@@ -107,7 +107,7 @@ export function LabReportCard({
             e.stopPropagation()
             onView(report)
           }}
-          className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 py-1.5 px-3 rounded-lg hover:bg-emerald-50 transition"
+          className="text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 flex items-center gap-1.5 py-1.5 px-3 rounded-lg transition"
         >
           <Eye className="w-3.5 h-3.5" />
           <span>View Report</span>
@@ -117,10 +117,11 @@ export function LabReportCard({
           type="button"
           onClick={handleDelete}
           disabled={deleting}
-          className="text-xs font-bold text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition disabled:opacity-50"
+          className="text-xs font-bold text-slate-500 hover:text-red-600 py-1.5 px-2.5 rounded-lg hover:bg-red-50 transition flex items-center gap-1 disabled:opacity-50"
           title="Delete report"
         >
-          {deleting ? <Loader2 className="w-4 h-4 animate-spin text-red-600" /> : <Trash2 className="w-4 h-4" />}
+          {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin text-red-600" /> : <Trash2 className="w-3.5 h-3.5" />}
+          <span>Delete</span>
         </button>
       </div>
     </div>

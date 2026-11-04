@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Search, FlaskConical, FileText, Filter } from "lucide-react"
+import { Search, FlaskConical, FileText, Trash2, Loader2 } from "lucide-react"
 import { LabReportItem, LabReportCategory } from "@/lib/labReportTypes"
 import { LabReportCard } from "./LabReportCard"
 import { LabReportViewerModal } from "./LabReportViewerModal"
@@ -20,6 +20,7 @@ export function LabReportsClient({
   const [selectedCategory, setSelectedCategory] = useState<string>("All")
   const [searchQuery, setSearchQuery] = useState("")
   const [viewingReport, setViewingReport] = useState<LabReportItem | null>(null)
+  const [clearingAll, setClearingAll] = useState(false)
 
   const handleRefresh = async () => {
     try {
@@ -30,6 +31,30 @@ export function LabReportsClient({
       }
     } catch (e) {
       console.error("Failed to refresh reports:", e)
+    }
+  }
+
+  const handleClearAllReports = async () => {
+    if (reports.length === 0) return
+    const confirmed = confirm(
+      `Are you sure you want to delete all ${reports.length} test reports for this account?\n\nThis cannot be undone and will permanently free up storage space.`
+    )
+    if (!confirmed) return
+
+    setClearingAll(true)
+    try {
+      const res = await fetch(`/api/lab-reports?elderId=${elderId}&clearAll=true`, { method: "DELETE" })
+      if (res.ok) {
+        setViewingReport(null)
+        await handleRefresh()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        alert(data.message || "Failed to clear test reports")
+      }
+    } catch (e: any) {
+      alert("Error clearing test reports: " + (e?.message || ""))
+    } finally {
+      setClearingAll(false)
     }
   }
 
@@ -81,8 +106,20 @@ export function LabReportsClient({
             />
           </div>
 
-          {/* Add Report button on mobile / desktop */}
-          <div className="shrink-0">
+          {/* Action buttons on mobile / desktop */}
+          <div className="flex items-center gap-2 shrink-0">
+            {reports.length > 0 && (
+              <button
+                onClick={handleClearAllReports}
+                disabled={clearingAll}
+                className="px-3.5 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-1.5 transition disabled:opacity-50"
+                title="Delete all old test reports to free up storage"
+              >
+                {clearingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                <span>Clear Old Reports</span>
+              </button>
+            )}
+
             <AddLabReportModal 
               elderId={elderId} 
               isElderView={isElderView} 
@@ -155,10 +192,14 @@ export function LabReportsClient({
         </div>
       )}
 
-      {/* Document Viewer Modal */}
+      {/* Document Viewer Modal with Zoom, Download, and Delete */}
       <LabReportViewerModal
         report={viewingReport}
         onClose={() => setViewingReport(null)}
+        onDeleted={() => {
+          setViewingReport(null)
+          handleRefresh()
+        }}
       />
     </div>
   )

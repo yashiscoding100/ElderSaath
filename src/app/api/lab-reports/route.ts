@@ -130,6 +130,38 @@ export async function DELETE(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
     const id = searchParams.get("id")
+    const clearAll = searchParams.get("clearAll") === "true"
+    const elderId = searchParams.get("elderId")
+
+    // Handle Bulk Clear of All Lab Reports for an Elder
+    if (clearAll && elderId) {
+      if (session.user.role === "CHILD") {
+        const relationship = await prisma.caregiverRelationship.findUnique({
+          where: { elderId_childId: { elderId, childId: session.user.id } }
+        })
+        if (!relationship || relationship.status !== "ACTIVE") {
+          return NextResponse.json({ message: "Forbidden" }, { status: 403 })
+        }
+      } else if (session.user.role === "ELDER") {
+        if (session.user.id !== elderId) {
+          return NextResponse.json({ message: "Forbidden" }, { status: 403 })
+        }
+      } else {
+        return NextResponse.json({ message: "Forbidden" }, { status: 403 })
+      }
+
+      const allDocs = await prisma.medicalDocument.findMany({
+        where: { elderId }
+      })
+      const labDocs = allDocs.filter(d => isLabReport(d.title))
+
+      for (const d of labDocs) {
+        await deleteDocument(d.fileUrl).catch(() => {})
+        await prisma.medicalDocument.delete({ where: { id: d.id } })
+      }
+
+      return NextResponse.json({ success: true, count: labDocs.length, message: `Deleted ${labDocs.length} test reports.` }, { status: 200 })
+    }
 
     if (!id) {
       return NextResponse.json({ message: "Missing test report id" }, { status: 400 })

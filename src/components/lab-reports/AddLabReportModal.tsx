@@ -1,20 +1,32 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { Plus, X, Upload, FileText, CheckCircle2, Loader2, Sparkles } from "lucide-react"
+import { 
+  X, 
+  Upload, 
+  Plus, 
+  Loader2, 
+  CheckCircle2, 
+  FlaskConical, 
+  Sparkles, 
+  Camera, 
+  FileText 
+} from "lucide-react"
 import { LabReportCategory } from "@/lib/labReportTypes"
 
-const QUICK_TEST_PRESETS: { name: string; category: LabReportCategory; icon: string }[] = [
-  { name: "Complete Blood Count (CBC)", category: "Blood Test", icon: "🩸" },
-  { name: "HbA1c Blood Sugar", category: "Blood Test", icon: "🍬" },
-  { name: "Lipid Profile / Cholesterol", category: "Blood Test", icon: "🧈" },
-  { name: "Kidney Function (KFT)", category: "Blood Test", icon: "🩺" },
-  { name: "Liver Function (LFT)", category: "Blood Test", icon: "🩺" },
-  { name: "Thyroid Profile (TSH)", category: "Blood Test", icon: "🧬" },
-  { name: "ECG / Electrocardiogram", category: "ECG / Heart", icon: "🫀" },
-  { name: "Chest X-Ray / Scan", category: "X-Ray / Scan", icon: "🩻" },
-  { name: "Urine Routine & Micro", category: "Urine & Pathology", icon: "🔬" }
+const QUICK_TEST_PRESETS = [
+  { name: "Complete Blood Count (CBC)", category: "Blood Test" as LabReportCategory, icon: "🩸" },
+  { name: "Blood Glucose / HbA1c", category: "Blood Test" as LabReportCategory, icon: "🩸" },
+  { name: "Lipid Profile / Cholesterol", category: "Blood Test" as LabReportCategory, icon: "🩸" },
+  { name: "Kidney Function (KFT / Creatinine)", category: "Blood Test" as LabReportCategory, icon: "🩸" },
+  { name: "Liver Function Test (LFT)", category: "Blood Test" as LabReportCategory, icon: "🩸" },
+  { name: "Thyroid Profile (T3, T4, TSH)", category: "Blood Test" as LabReportCategory, icon: "🩸" },
+  { name: "Electrocardiogram (ECG)", category: "ECG / Heart" as LabReportCategory, icon: "🫀" },
+  { name: "Echocardiogram (2D Echo)", category: "ECG / Heart" as LabReportCategory, icon: "🫀" },
+  { name: "Chest X-Ray", category: "X-Ray / Scan" as LabReportCategory, icon: "🩻" },
+  { name: "Ultrasound / Sonography", category: "X-Ray / Scan" as LabReportCategory, icon: "🩻" },
+  { name: "Urine Routine & Microscopic", category: "Urine & Pathology" as LabReportCategory, icon: "🔬" },
 ]
 
 const CATEGORIES: { label: LabReportCategory; icon: string }[] = [
@@ -22,10 +34,11 @@ const CATEGORIES: { label: LabReportCategory; icon: string }[] = [
   { label: "ECG / Heart", icon: "🫀" },
   { label: "X-Ray / Scan", icon: "🩻" },
   { label: "Urine & Pathology", icon: "🔬" },
+  { label: "X-Ray / Scan", icon: "🩻" },
   { label: "General Lab Test", icon: "📋" }
 ]
 
-export function AddLabReportModal({ 
+export function AddLabReportModal({
   elderId,
   isElderView = false,
   onReportAdded
@@ -37,6 +50,7 @@ export function AddLabReportModal({
   const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [compressing, setCompressing] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   const [testName, setTestName] = useState("")
@@ -44,11 +58,104 @@ export function AddLabReportModal({
   const [testDate, setTestDate] = useState(() => new Date().toISOString().split("T")[0])
   const [labName, setLabName] = useState("")
   const [resultSummary, setResultSummary] = useState("")
-  const [file, setFile] = useState<File | null>(null)
+  
+  const [fileData, setFileData] = useState<string | null>(null)
+  const [fileMime, setFileMime] = useState<string>("image/jpeg")
+  const [fileName, setFileName] = useState<string>("")
+  const [fileSizeKb, setFileSizeKb] = useState<number | null>(null)
+
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleApplyPreset = (preset: typeof QUICK_TEST_PRESETS[0]) => {
     setTestName(preset.name)
     setCategory(preset.category)
+  }
+
+  // Client-side downscaling and compression for images
+  const processSelectedFile = async (selectedFile: File) => {
+    setErrorMsg(null)
+    setCompressing(true)
+    setFileName(selectedFile.name)
+
+    try {
+      const isPdf = selectedFile.type.includes("pdf") || selectedFile.name.toLowerCase().endsWith(".pdf")
+
+      if (isPdf) {
+        if (selectedFile.size > 5 * 1024 * 1024) {
+          setErrorMsg("PDF file is larger than 5 MB. Please select a smaller PDF or capture a photo.")
+          setCompressing(false)
+          return
+        }
+        const reader = new FileReader()
+        reader.onload = () => {
+          setFileData(reader.result as string)
+          setFileMime("application/pdf")
+          setFileSizeKb(Math.round(selectedFile.size / 1024))
+          setCompressing(false)
+        }
+        reader.onerror = () => {
+          setErrorMsg("Failed to read PDF file.")
+          setCompressing(false)
+        }
+        reader.readAsDataURL(selectedFile)
+        return
+      }
+
+      // For images (photos or gallery uploads): compress down to ~250 KB
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const rawBase64 = e.target?.result as string
+        const img = new Image()
+        img.onload = () => {
+          const MAX_DIM = 1600
+          let { width, height } = img
+          if (width > MAX_DIM || height > MAX_DIM) {
+            if (width > height) {
+              height = Math.round((height * MAX_DIM) / width)
+              width = MAX_DIM
+            } else {
+              width = Math.round((width * MAX_DIM) / height)
+              height = MAX_DIM
+            }
+          }
+
+          const canvas = document.createElement("canvas")
+          canvas.width = width
+          canvas.height = height
+          const ctx = canvas.getContext("2d")
+          if (!ctx) {
+            setFileData(rawBase64)
+            setFileMime("image/jpeg")
+            setFileSizeKb(Math.round(rawBase64.length / 1024))
+            setCompressing(false)
+            return
+          }
+
+          ctx.drawImage(img, 0, 0, width, height)
+          const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.82)
+          setFileData(compressedDataUrl)
+          setFileMime("image/jpeg")
+          setFileSizeKb(Math.round(compressedDataUrl.length / 1024))
+          setCompressing(false)
+        }
+        img.onerror = () => {
+          setFileData(rawBase64)
+          setFileMime("image/jpeg")
+          setCompressing(false)
+        }
+        img.src = rawBase64
+      }
+      reader.onerror = () => {
+        setErrorMsg("Failed to read image file.")
+        setCompressing(false)
+      }
+      reader.readAsDataURL(selectedFile)
+    } catch (err: any) {
+      console.error(err)
+      setErrorMsg("Error processing file: " + (err.message || ""))
+      setCompressing(false)
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -57,7 +164,7 @@ export function AddLabReportModal({
       setErrorMsg("Please enter the test name")
       return
     }
-    if (!file) {
+    if (!fileData) {
       setErrorMsg("Please attach the report photo or PDF")
       return
     }
@@ -66,46 +173,41 @@ export function AddLabReportModal({
     setErrorMsg(null)
 
     try {
-      const reader = new FileReader()
-      reader.onloadend = async () => {
-        const fileData = reader.result as string
-
-        const res = await fetch("/api/lab-reports", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            elderId,
-            testName,
-            category,
-            testDate,
-            labName,
-            resultSummary,
-            fileType: file.type || "application/pdf",
-            fileData
-          })
+      const res = await fetch("/api/lab-reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          elderId,
+          testName,
+          category,
+          testDate,
+          labName,
+          resultSummary,
+          fileType: fileMime,
+          fileData
         })
+      })
 
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}))
-          throw new Error(errData.message || "Failed to save test report")
-        }
-
-        setIsOpen(false)
-        setTestName("")
-        setCategory("Blood Test")
-        setLabName("")
-        setResultSummary("")
-        setFile(null)
-        setTestDate(new Date().toISOString().split("T")[0])
-
-        if (onReportAdded) onReportAdded()
-        router.refresh()
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.message || "Failed to save test report")
       }
 
-      reader.readAsDataURL(file)
+      setIsOpen(false)
+      setTestName("")
+      setCategory("Blood Test")
+      setLabName("")
+      setResultSummary("")
+      setFileData(null)
+      setFileName("")
+      setTestDate(new Date().toISOString().split("T")[0])
+
+      if (onReportAdded) onReportAdded()
+      router.refresh()
     } catch (err: any) {
       console.error(err)
       setErrorMsg(err.message || "Failed to upload test report")
+    } finally {
       setLoading(false)
     }
   }
@@ -118,8 +220,8 @@ export function AddLabReportModal({
           setErrorMsg(null)
         }}
         className={isElderView
-          ? "w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3.5 rounded-2xl font-bold shadow-md hover:shadow-lg transition flex items-center justify-center gap-2 text-base sm:text-lg cursor-pointer"
-          : "bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold shadow-sm hover:shadow transition flex items-center gap-2 text-sm cursor-pointer"
+          ? "w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-2xl font-bold shadow-md hover:shadow-lg transition flex items-center justify-center gap-2 text-base sm:text-lg cursor-pointer"
+          : "bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-bold shadow-sm hover:shadow transition flex items-center gap-2 text-sm cursor-pointer"
         }
       >
         <Plus className="w-5 h-5" />
@@ -132,7 +234,7 @@ export function AddLabReportModal({
     <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in overflow-y-auto">
       <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full my-8 overflow-hidden border border-slate-100 flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="p-6 bg-gradient-to-r from-emerald-600 to-teal-700 text-white flex justify-between items-center">
+        <div className="p-6 bg-gradient-to-r from-emerald-600 to-teal-700 text-white flex justify-between items-center shrink-0">
           <div>
             <div className="flex items-center gap-2">
               <span className="text-2xl">🧪</span>
@@ -263,37 +365,86 @@ export function AddLabReportModal({
             />
           </div>
 
-          {/* File Upload */}
+          {/* File Upload / Camera Options */}
           <div>
-            <label className="block text-sm font-bold text-slate-800 mb-1.5">
-              Report File or Camera Photo <span className="text-red-500">*</span>
+            <label className="block text-sm font-bold text-slate-800 mb-2">
+              Attach Report Document / Photo <span className="text-red-500">*</span>
             </label>
-            <div className="relative border-2 border-dashed border-slate-300 rounded-2xl p-5 text-center hover:border-emerald-500 hover:bg-emerald-50/30 transition cursor-pointer group">
-              <input
-                required
-                type="file"
-                accept=".pdf,image/*"
-                onChange={e => setFile(e.target.files?.[0] || null)}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              />
-              {file ? (
-                <div className="flex items-center justify-center gap-3 text-emerald-700">
-                  <CheckCircle2 className="w-6 h-6 text-emerald-600" />
-                  <div className="text-left">
-                    <p className="font-bold text-sm text-slate-900 truncate max-w-xs">{file.name}</p>
-                    <p className="text-xs text-slate-500">{(file.size / 1024 / 1024).toFixed(2)} MB • Ready to save</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center gap-1.5">
-                  <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
-                    <Upload className="w-5 h-5" />
-                  </div>
-                  <p className="text-sm font-bold text-slate-800 mt-1">Tap to select PDF or snap report photo</p>
-                  <p className="text-xs text-slate-400">PDF, JPG, PNG supported (up to 10MB)</p>
-                </div>
-              )}
+
+            {/* Hidden native inputs */}
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={e => {
+                const f = e.target.files?.[0]
+                if (f) processSelectedFile(f)
+              }}
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,image/*"
+              className="hidden"
+              onChange={e => {
+                const f = e.target.files?.[0]
+                if (f) processSelectedFile(f)
+              }}
+            />
+
+            {/* Upload Buttons: Camera vs File */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+              <button
+                type="button"
+                onClick={() => cameraInputRef.current?.click()}
+                className="p-4 bg-emerald-50 hover:bg-emerald-100/80 border-2 border-emerald-300 rounded-2xl flex items-center justify-center gap-2.5 transition text-emerald-800 font-bold text-sm shadow-sm"
+              >
+                <Camera className="w-5 h-5 text-emerald-600" />
+                <span>Take Photo with Camera</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="p-4 bg-slate-50 hover:bg-slate-100 border-2 border-slate-200 rounded-2xl flex items-center justify-center gap-2.5 transition text-slate-700 font-bold text-sm shadow-sm"
+              >
+                <FileText className="w-5 h-5 text-slate-500" />
+                <span>Upload PDF or Gallery</span>
+              </button>
             </div>
+
+            {/* Attached file status banner */}
+            {compressing ? (
+              <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 flex items-center justify-center gap-2 text-emerald-800 text-sm font-bold">
+                <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+                <span>Optimizing & compressing document...</span>
+              </div>
+            ) : fileData ? (
+              <div className="p-3.5 bg-emerald-50 rounded-2xl border border-emerald-200 flex items-center justify-between gap-3 text-emerald-900">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="font-bold text-xs sm:text-sm truncate">{fileName || "Report Document"}</p>
+                    <p className="text-[11px] text-emerald-700">
+                      {fileSizeKb ? `${fileSizeKb} KB` : "Ready"} • {fileMime.includes("pdf") ? "PDF Document" : "Compressed JPEG Photo"}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFileData(null)
+                    setFileName("")
+                    setFileSizeKb(null)
+                  }}
+                  className="text-xs text-red-600 hover:underline font-bold shrink-0"
+                >
+                  Change
+                </button>
+              </div>
+            ) : null}
           </div>
 
           {/* Action Buttons */}
@@ -307,7 +458,7 @@ export function AddLabReportModal({
             </button>
             <button
               type="submit"
-              disabled={loading || !testName || !file}
+              disabled={loading || compressing || !testName || !fileData}
               className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-md hover:shadow-lg disabled:opacity-50 transition flex items-center gap-2 cursor-pointer text-sm sm:text-base"
             >
               {loading ? (
