@@ -1,9 +1,9 @@
 import { cookies } from "next/headers"
 import { prisma } from "@/lib/prisma"
 
-export async function getActiveElder(childId: string) {
+export async function getActiveElder(childId: string, elderIdOverride?: string) {
   const cookieStore = await cookies()
-  const activeElderId = cookieStore.get("activeElderId")?.value
+  const activeElderId = elderIdOverride || cookieStore.get("activeElderId")?.value
 
   if (activeElderId) {
     const rel = await prisma.caregiverRelationship.findUnique({
