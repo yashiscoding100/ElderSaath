@@ -8,7 +8,6 @@ import {
   ZoomIn, 
   ZoomOut, 
   RotateCw, 
-  Maximize2, 
   ChevronLeft, 
   ChevronRight, 
   FileText, 
@@ -121,6 +120,11 @@ export function MedicalDocumentViewerModal({
   const [downloadSuccess, setDownloadSuccess] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
+  // Two-Finger Pinch-to-Zoom & Double-Tap state refs
+  const initialPinchDistRef = useRef<number>(0)
+  const initialZoomRef = useRef<number>(1)
+  const lastTapTimeRef = useRef<number>(0)
+
   // PDF.js State
   const [pdfLoading, setPdfLoading] = useState(false)
   const [pdfError, setPdfError] = useState<string | null>(null)
@@ -137,6 +141,7 @@ export function MedicalDocumentViewerModal({
     setCurrentPage(1)
     setPdfError(null)
     setPdfLoading(false)
+    initialPinchDistRef.current = 0
   }, [doc?.id])
 
   if (!doc) return null
@@ -246,7 +251,7 @@ export function MedicalDocumentViewerModal({
     }
   }
 
-  // Zoom handlers
+  // Button Zoom Handlers
   const handleZoomIn = () => setZoom(prev => Math.min(4, Number((prev + 0.25).toFixed(2))))
   const handleZoomOut = () => setZoom(prev => Math.max(0.5, Number((prev - 0.25).toFixed(2))))
   const handleResetZoom = () => {
@@ -256,7 +261,7 @@ export function MedicalDocumentViewerModal({
   }
   const handleRotate = () => setRotation(prev => (prev + 90) % 360)
 
-  // Drag / Pan handlers
+  // Mouse drag handlers
   const handleMouseDown = (e: React.MouseEvent) => {
     if (zoom <= 1) return
     setIsDragging(true)
@@ -272,6 +277,80 @@ export function MedicalDocumentViewerModal({
   }
 
   const handleMouseUp = () => setIsDragging(false)
+
+  // Mouse wheel zoom (Ctrl + Wheel or standard Wheel)
+  const handleWheel = (e: React.WheelEvent) => {
+    if (e.deltaY < 0) {
+      setZoom(z => Math.min(4, Number((z + 0.15).toFixed(2))))
+    } else {
+      setZoom(z => Math.max(0.5, Number((z - 0.15).toFixed(2))))
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Mobile Touch Gestures: Two-Finger Pinch-to-Zoom & Double-Tap
+  // --------------------------------------------------------------------------
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      // Two fingers: initialize pinch-to-zoom
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      )
+      initialPinchDistRef.current = dist
+      initialZoomRef.current = zoom
+      setIsDragging(false)
+    } else if (e.touches.length === 1) {
+      // Single finger: check double tap
+      const now = Date.now()
+      if (now - lastTapTimeRef.current < 320) {
+        // Double tap toggles zoom
+        if (zoom > 1.2) {
+          setZoom(1)
+          setPan({ x: 0, y: 0 })
+        } else {
+          setZoom(2.2)
+        }
+        lastTapTimeRef.current = 0
+      } else {
+        lastTapTimeRef.current = now
+      }
+
+      // Single finger pan when zoomed in
+      if (zoom > 1) {
+        setIsDragging(true)
+        setDragStart({ x: e.touches[0].clientX - pan.x, y: e.touches[0].clientY - pan.y })
+      }
+    }
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && initialPinchDistRef.current > 0) {
+      // Pinching with two fingers!
+      const currentDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      )
+      const factor = currentDist / initialPinchDistRef.current
+      const nextZoom = Math.min(4, Math.max(0.6, Number((initialZoomRef.current * factor).toFixed(2))))
+      setZoom(nextZoom)
+    } else if (e.touches.length === 1 && isDragging && zoom > 1) {
+      // Panning with single finger
+      setPan({
+        x: e.touches[0].clientX - dragStart.x,
+        y: e.touches[0].clientY - dragStart.y
+      })
+    }
+  }
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (e.touches.length < 2) {
+      initialPinchDistRef.current = 0
+    }
+    if (e.touches.length === 0) {
+      setIsDragging(false)
+    }
+  }
 
   // Download handler
   const handleDownload = async () => {
@@ -412,7 +491,7 @@ export function MedicalDocumentViewerModal({
             <span className="text-2xl shrink-0">{doc.icon || (format.isPdf ? "📄" : "💊")}</span>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h3 className="font-bold text-sm sm:text-base truncate max-w-[200px] sm:max-w-md text-white">
+                <h3 className="font-bold text-sm sm:text-base truncate max-w-[180px] sm:max-w-md text-white">
                   {doc.title}
                 </h3>
                 {doc.badgeText && (
@@ -510,16 +589,22 @@ export function MedicalDocumentViewerModal({
           </div>
         </div>
 
-        {/* Viewer Main Viewport */}
+        {/* Viewer Main Viewport with Two-Finger Pinch-to-Zoom & Drag-Pan */}
         <div 
-          className="flex-1 bg-slate-950 relative overflow-hidden flex items-center justify-center cursor-default"
+          className="flex-1 bg-slate-950 relative overflow-hidden flex items-center justify-center cursor-default select-none"
+          style={{ touchAction: "none" }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
+          onWheel={handleWheel}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
         >
           {format.isPdf ? (
-            <div className="w-full h-full flex flex-col items-center justify-center overflow-auto p-4">
+            <div className="w-full h-full flex flex-col items-center justify-center overflow-hidden p-3">
               {pdfLoading && (
                 <div className="flex flex-col items-center gap-3 text-slate-400">
                   <Loader2 className="w-10 h-10 animate-spin text-blue-500" />
@@ -560,18 +645,19 @@ export function MedicalDocumentViewerModal({
               <div 
                 className={`transition-transform duration-75 flex items-center justify-center ${pdfLoading || pdfError ? 'hidden' : 'block'}`}
                 style={{
-                  transform: `translate(${pan.x}px, ${pan.y}px)`,
+                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
                   cursor: zoom > 1 ? (isDragging ? "grabbing" : "grab") : "default"
                 }}
               >
                 <canvas 
                   ref={canvasRef} 
-                  className="rounded-lg shadow-2xl bg-white max-w-full max-h-[80vh] object-contain border border-slate-700"
+                  className="rounded-lg shadow-2xl bg-white max-w-full max-h-[78vh] object-contain border border-slate-700 pointer-events-none"
                 />
               </div>
 
+              {/* PDF Page Navigation Bar */}
               {numPages > 1 && !pdfLoading && !pdfError && (
-                <div className="absolute bottom-4 bg-slate-900/90 border border-slate-700 backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-3 text-xs font-bold text-slate-300 shadow-xl">
+                <div className="absolute bottom-4 bg-slate-900/90 border border-slate-700 backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-3 text-xs font-bold text-slate-300 shadow-xl z-10">
                   <button
                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                     disabled={currentPage <= 1}
@@ -604,27 +690,33 @@ export function MedicalDocumentViewerModal({
                 draggable={false}
                 style={{
                   transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom}) rotate(${rotation}deg)`,
-                  transition: isDragging ? "none" : "transform 150ms ease-out"
+                  transition: isDragging ? "none" : "transform 100ms ease-out"
                 }}
-                className="max-w-full max-h-[82vh] object-contain rounded-xl shadow-2xl pointer-events-auto select-none"
+                className="max-w-full max-h-[82vh] object-contain rounded-xl shadow-2xl pointer-events-none select-none"
               />
             </div>
           )}
         </div>
 
-        {/* Footer info bar */}
-        {doc.extraRemark && (
-          <div className="p-3 px-4 bg-slate-900 border-t border-slate-800 text-xs text-slate-300 flex items-center justify-between shrink-0">
-            <span className="truncate pr-4 font-medium">
-              💡 <span className="font-bold text-white">Result / Doctor Remark:</span> {doc.extraRemark}
-            </span>
-            {doc.category && (
-              <span className="px-2.5 py-1 bg-slate-800 border border-slate-700 rounded-lg text-emerald-400 font-bold shrink-0">
-                {doc.category}
+        {/* Footer info bar with Touch Instructions */}
+        <div className="p-3 px-4 bg-slate-900 border-t border-slate-800 text-xs text-slate-300 flex flex-wrap items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-3 truncate">
+            {doc.extraRemark ? (
+              <span className="truncate font-medium">
+                💡 <span className="font-bold text-white">Result:</span> {doc.extraRemark}
+              </span>
+            ) : (
+              <span className="text-[11px] text-slate-400">
+                ✌️ <span className="text-slate-300 font-medium">Two-finger pinch to zoom</span> • Double-tap to quick zoom • Drag to pan
               </span>
             )}
           </div>
-        )}
+          {doc.category && (
+            <span className="px-2.5 py-0.5 bg-slate-800 border border-slate-700 rounded-lg text-emerald-400 font-bold shrink-0 text-[11px]">
+              {doc.category}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   )
