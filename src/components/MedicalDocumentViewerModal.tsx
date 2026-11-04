@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useRef } from "react"
+import React, { useState, useEffect, useRef, useCallback } from "react"
 import { 
   X, 
   Download, 
@@ -13,7 +13,8 @@ import {
   FileText, 
   Loader2, 
   ExternalLink,
-  Check
+  Check,
+  Maximize2
 } from "lucide-react"
 
 export interface MedicalDocItem {
@@ -111,30 +112,36 @@ export function MedicalDocumentViewerModal({
   onClose: () => void
   onDelete?: (id: string) => Promise<void> | void
 }) {
+  // Smooth Transform States
   const [zoom, setZoom] = useState(1)
   const [rotation, setRotation] = useState(0)
   const [pan, setPan] = useState({ x: 0, y: 0 })
-  const [isDragging, setIsDragging] = useState(false)
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
+  const [isInteracting, setIsInteracting] = useState(false)
+  
+  // Interaction Tracking Refs
+  const initialPinchDistRef = useRef<number>(0)
+  const initialZoomRef = useRef<number>(1)
+  const initialPanRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+  const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+  const lastTapTimeRef = useRef<number>(0)
+  const viewportRef = useRef<HTMLDivElement | null>(null)
+
+  // Download & Delete States
   const [downloading, setDownloading] = useState(false)
   const [downloadSuccess, setDownloadSuccess] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
-  // Two-Finger Pinch-to-Zoom & Double-Tap state refs
-  const initialPinchDistRef = useRef<number>(0)
-  const initialZoomRef = useRef<number>(1)
-  const lastTapTimeRef = useRef<number>(0)
-
-  // PDF.js State
+  // PDF.js State & Task Refs
   const [pdfLoading, setPdfLoading] = useState(false)
   const [pdfError, setPdfError] = useState<string | null>(null)
   const [numPages, setNumPages] = useState<number>(1)
   const [currentPage, setCurrentPage] = useState<number>(1)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const pdfDocRef = useRef<any>(null)
+  const renderTaskRef = useRef<any>(null)
 
+  // Reset viewport when opening a different document
   useEffect(() => {
-    // Reset viewport on document change
     setZoom(1)
     setRotation(0)
     setPan({ x: 0, y: 0 })
@@ -142,13 +149,61 @@ export function MedicalDocumentViewerModal({
     setPdfError(null)
     setPdfLoading(false)
     initialPinchDistRef.current = 0
+    if (renderTaskRef.current) {
+      try { renderTaskRef.current.cancel(); } catch {}
+      renderTaskRef.current = null
+    }
   }, [doc?.id])
 
   if (!doc) return null
 
   const format = detectDocumentFormat(doc.fileUrl, doc.fileType)
 
-  // Load and render PDF using PDF.js onto canvas
+  // ---------------------------------------------------------------------------
+  // PDF Rendering Engine (High-Resolution Canvas Rendered ONCE per page)
+  // ---------------------------------------------------------------------------
+  const renderCurrentPage = useCallback(async (pdf: any, pageNum: number) => {
+    if (!canvasRef.current || !pdf) return
+
+    // Cancel any ongoing render task to prevent canvas matrix collision / upside-down flipping
+    if (renderTaskRef.current) {
+      try {
+        renderTaskRef.current.cancel()
+      } catch {}
+      renderTaskRef.current = null
+    }
+
+    try {
+      const page = await pdf.getPage(pageNum)
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const context = canvas.getContext("2d")
+      if (!context) return
+
+      // Render at fixed, crisp 2x resolution so text is crystal clear without laggy re-renders
+      const dpr = typeof window !== "undefined" ? Math.min(2.5, Math.max(1.8, window.devicePixelRatio || 2)) : 2
+      const viewport = page.getViewport({ scale: dpr })
+
+      canvas.height = viewport.height
+      canvas.width = viewport.width
+
+      const renderContext = {
+        canvasContext: context,
+        viewport: viewport
+      }
+
+      const task = page.render(renderContext)
+      renderTaskRef.current = task
+      await task.promise
+      renderTaskRef.current = null
+    } catch (e: any) {
+      if (e?.name !== "RenderingCancelledException") {
+        console.error("Error rendering PDF page canvas:", e)
+      }
+    }
+  }, [])
+
+  // Load PDF Document
   useEffect(() => {
     if (!doc || !format.isPdf) return
 
@@ -156,7 +211,7 @@ export function MedicalDocumentViewerModal({
     setPdfLoading(true)
     setPdfError(null)
 
-    async function renderPdf() {
+    async function initPdf() {
       try {
         let pdfjs = (window as any).pdfjsLib
         if (!pdfjs) {
@@ -203,9 +258,9 @@ export function MedicalDocumentViewerModal({
         setNumPages(loadedPdf.numPages)
         setPdfLoading(false)
 
-        renderPage(loadedPdf, currentPage, zoom, rotation)
+        await renderCurrentPage(loadedPdf, currentPage)
       } catch (err: any) {
-        console.error("PDF render error:", err)
+        console.error("PDF load error:", err)
         if (isMounted) {
           setPdfError(err.message || "Failed to render PDF")
           setPdfLoading(false)
@@ -213,133 +268,156 @@ export function MedicalDocumentViewerModal({
       }
     }
 
-    renderPdf()
+    initPdf()
 
     return () => {
       isMounted = false
+      if (renderTaskRef.current) {
+        try { renderTaskRef.current.cancel(); } catch {}
+        renderTaskRef.current = null
+      }
     }
-  }, [doc?.id, doc?.fileUrl, format.isPdf])
+  }, [doc?.id, doc?.fileUrl, format.isPdf, renderCurrentPage])
 
+  // Re-render canvas when changing pages
   useEffect(() => {
     if (format.isPdf && pdfDocRef.current && !pdfLoading) {
-      renderPage(pdfDocRef.current, currentPage, zoom, rotation)
+      renderCurrentPage(pdfDocRef.current, currentPage)
     }
-  }, [currentPage, zoom, rotation, format.isPdf, pdfLoading])
+  }, [currentPage, format.isPdf, pdfLoading, renderCurrentPage])
 
-  async function renderPage(pdf: any, pageNum: number, currentZoom: number, currentRotation: number) {
-    if (!canvasRef.current || !pdf) return
-    try {
-      const page = await pdf.getPage(pageNum)
-      const scale = Math.max(0.7, currentZoom * 1.5)
-      const viewport = page.getViewport({ scale, rotation: currentRotation })
+  // ---------------------------------------------------------------------------
+  // Smooth Zoom, Pan & Clamping Handlers (Prevents drifting off to corners)
+  // ---------------------------------------------------------------------------
 
-      const canvas = canvasRef.current
-      if (!canvas) return
-      const context = canvas.getContext("2d")
-      if (!context) return
-
-      canvas.height = viewport.height
-      canvas.width = viewport.width
-
-      const renderContext = {
-        canvasContext: context,
-        viewport: viewport
-      }
-      await page.render(renderContext).promise
-    } catch (e) {
-      console.error("Error rendering PDF page canvas:", e)
+  const clampPan = (newX: number, newY: number, currentZoom: number) => {
+    if (currentZoom <= 1.0) {
+      return { x: 0, y: 0 }
+    }
+    const vp = viewportRef.current
+    const w = vp?.clientWidth || 400
+    const h = vp?.clientHeight || 600
+    // Dynamic boundary based on zoom level: Document can never be lost outside viewport
+    const maxX = ((w * (currentZoom - 1)) / 2) + 60
+    const maxY = ((h * (currentZoom - 1)) / 2) + 80
+    return {
+      x: Math.max(-maxX, Math.min(maxX, newX)),
+      y: Math.max(-maxY, Math.min(maxY, newY))
     }
   }
 
-  // Button Zoom Handlers
-  const handleZoomIn = () => setZoom(prev => Math.min(4, Number((prev + 0.25).toFixed(2))))
-  const handleZoomOut = () => setZoom(prev => Math.max(0.5, Number((prev - 0.25).toFixed(2))))
-  const handleResetZoom = () => {
-    setZoom(1)
-    setRotation(0)
-    setPan({ x: 0, y: 0 })
-  }
-  const handleRotate = () => setRotation(prev => (prev + 90) % 360)
-
-  // Mouse drag handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (zoom <= 1) return
-    setIsDragging(true)
-    setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y })
-  }
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging) return
-    setPan({
-      x: e.clientX - dragStart.x,
-      y: e.clientY - dragStart.y
+  // Button Zoom In (clamped to max 4x)
+  const handleZoomIn = () => {
+    setZoom(prev => {
+      const next = Math.min(4.0, Number((prev + 0.35).toFixed(2)))
+      return next
     })
   }
 
-  const handleMouseUp = () => setIsDragging(false)
-
-  // Mouse wheel zoom (Ctrl + Wheel or standard Wheel)
-  const handleWheel = (e: React.WheelEvent) => {
-    if (e.deltaY < 0) {
-      setZoom(z => Math.min(4, Number((z + 0.15).toFixed(2))))
-    } else {
-      setZoom(z => Math.max(0.5, Number((z - 0.15).toFixed(2))))
-    }
+  // Button Zoom Out (never drops below 1.0 to prevent document shrinking & hiding in corners)
+  const handleZoomOut = () => {
+    setZoom(prev => {
+      const next = Math.max(1.0, Number((prev - 0.35).toFixed(2)))
+      if (next <= 1.0) {
+        setPan({ x: 0, y: 0 })
+      } else {
+        setPan(p => ({
+          x: p.x * ((next - 1) / (prev - 1 || 1)),
+          y: p.y * ((next - 1) / (prev - 1 || 1))
+        }))
+      }
+      return next
+    })
   }
 
-  // --------------------------------------------------------------------------
-  // Mobile Touch Gestures: Two-Finger Pinch-to-Zoom & Double-Tap
-  // --------------------------------------------------------------------------
+  // Reset Zoom & Pan to exactly centered 100%
+  const handleResetZoom = () => {
+    setZoom(1.0)
+    setPan({ x: 0, y: 0 })
+    setRotation(0)
+  }
+
+  // Rotate 90 degrees clockwise (normalized, keeps centered)
+  const handleRotate = () => {
+    setRotation(prev => (prev + 90) % 360)
+    setPan({ x: 0, y: 0 })
+  }
+
+  // ---------------------------------------------------------------------------
+  // Touch Gestures: Pinch-to-Zoom & Pan (Silky Smooth 60fps GPU Transforms)
+  // ---------------------------------------------------------------------------
+
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 2) {
-      // Two fingers: initialize pinch-to-zoom
+      // Initialize two-finger pinch gesture
       const dist = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
         e.touches[0].clientY - e.touches[1].clientY
       )
-      initialPinchDistRef.current = dist
-      initialZoomRef.current = zoom
-      setIsDragging(false)
+      if (dist > 10) {
+        initialPinchDistRef.current = dist
+        initialZoomRef.current = zoom
+        initialPanRef.current = { ...pan }
+        setIsInteracting(true)
+      }
     } else if (e.touches.length === 1) {
-      // Single finger: check double tap
       const now = Date.now()
-      if (now - lastTapTimeRef.current < 320) {
-        // Double tap toggles zoom
-        if (zoom > 1.2) {
-          setZoom(1)
+      // Check double tap (within 300ms)
+      if (now - lastTapTimeRef.current < 300) {
+        if (zoom > 1.15) {
+          // Double-tap when zoomed in -> smoothly reset to centered 100%
+          setZoom(1.0)
           setPan({ x: 0, y: 0 })
         } else {
+          // Double-tap when 100% -> smoothly zoom into 2.2x
           setZoom(2.2)
         }
         lastTapTimeRef.current = 0
-      } else {
-        lastTapTimeRef.current = now
+        return
       }
+      lastTapTimeRef.current = now
 
-      // Single finger pan when zoomed in
-      if (zoom > 1) {
-        setIsDragging(true)
-        setDragStart({ x: e.touches[0].clientX - pan.x, y: e.touches[0].clientY - pan.y })
+      // Single finger drag/pan when zoomed in
+      if (zoom > 1.0) {
+        setIsInteracting(true)
+        dragStartRef.current = {
+          x: e.touches[0].clientX - pan.x,
+          y: e.touches[0].clientY - pan.y
+        }
       }
     }
   }
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (e.touches.length === 2 && initialPinchDistRef.current > 0) {
-      // Pinching with two fingers!
+    if (e.touches.length === 2 && initialPinchDistRef.current > 10) {
+      // Active Pinch-to-zoom
       const currentDist = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
         e.touches[0].clientY - e.touches[1].clientY
       )
-      const factor = currentDist / initialPinchDistRef.current
-      const nextZoom = Math.min(4, Math.max(0.6, Number((initialZoomRef.current * factor).toFixed(2))))
-      setZoom(nextZoom)
-    } else if (e.touches.length === 1 && isDragging && zoom > 1) {
-      // Panning with single finger
-      setPan({
-        x: e.touches[0].clientX - dragStart.x,
-        y: e.touches[0].clientY - dragStart.y
-      })
+      const scaleRatio = currentDist / initialPinchDistRef.current
+      
+      // Calculate target zoom (clamped between 0.9 elastic bottom and 4.0 top)
+      const targetZoom = Math.min(4.0, Math.max(0.9, initialZoomRef.current * scaleRatio))
+      
+      // When unzooming towards 1.0, automatically pull pan back to center so file never flies into a corner!
+      if (targetZoom <= 1.05) {
+        const decay = Math.max(0, (targetZoom - 0.9) / 0.15)
+        setPan({
+          x: initialPanRef.current.x * decay,
+          y: initialPanRef.current.y * decay
+        })
+      } else {
+        const clamped = clampPan(initialPanRef.current.x, initialPanRef.current.y, targetZoom)
+        setPan(clamped)
+      }
+
+      setZoom(Number(targetZoom.toFixed(3)))
+    } else if (e.touches.length === 1 && isInteracting && zoom > 1.0) {
+      // Single finger panning
+      const newX = e.touches[0].clientX - dragStartRef.current.x
+      const newY = e.touches[0].clientY - dragStartRef.current.y
+      setPan(clampPan(newX, newY, zoom))
     }
   }
 
@@ -348,11 +426,51 @@ export function MedicalDocumentViewerModal({
       initialPinchDistRef.current = 0
     }
     if (e.touches.length === 0) {
-      setIsDragging(false)
+      setIsInteracting(false)
+      // Rubber-band snap back: If unzoomed below 1.05x, cleanly snap back to 100% centered
+      if (zoom <= 1.05) {
+        setZoom(1.0)
+        setPan({ x: 0, y: 0 })
+      }
     }
   }
 
-  // Download handler
+  // Mouse wheel zoom
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault()
+    if (e.deltaY < 0) {
+      setZoom(z => Math.min(4.0, Number((z + 0.2).toFixed(2))))
+    } else {
+      setZoom(z => {
+        const next = Math.max(1.0, Number((z - 0.2).toFixed(2)))
+        if (next <= 1.0) setPan({ x: 0, y: 0 })
+        return next
+      })
+    }
+  }
+
+  // Mouse drag handlers (Desktop)
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (zoom <= 1.0) return
+    setIsInteracting(true)
+    dragStartRef.current = {
+      x: e.clientX - pan.x,
+      y: e.clientY - pan.y
+    }
+  }
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isInteracting || zoom <= 1.0) return
+    const newX = e.clientX - dragStartRef.current.x
+    const newY = e.clientY - dragStartRef.current.y
+    setPan(clampPan(newX, newY, zoom))
+  }
+
+  const handleMouseUp = () => setIsInteracting(false)
+
+  // ---------------------------------------------------------------------------
+  // Download Engine (Capacitor Native Share + Clean Web Download)
+  // ---------------------------------------------------------------------------
   const handleDownload = async () => {
     if (!doc) return
     setDownloading(true)
@@ -479,6 +597,15 @@ export function MedicalDocumentViewerModal({
     }
   }
 
+  // Unified 60fps GPU transform style for both PDF and Images
+  const transformStyle: React.CSSProperties = {
+    transform: `translate3d(${pan.x}px, ${pan.y}px, 0px) scale(${zoom}) rotate(${rotation}deg)`,
+    transformOrigin: "center center",
+    transition: isInteracting ? "none" : "transform 260ms cubic-bezier(0.16, 1, 0.3, 1)",
+    willChange: "transform",
+    cursor: zoom > 1.0 ? (isInteracting ? "grabbing" : "grab") : "default"
+  }
+
   return (
     <div className="fixed inset-0 z-[9999] bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-2 sm:p-5 animate-fade-in select-none">
       <div 
@@ -509,34 +636,42 @@ export function MedicalDocumentViewerModal({
           {/* Action Toolbar */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Zoom Controls */}
-            <div className="flex items-center bg-slate-800 border border-slate-700 rounded-xl p-0.5 text-xs">
+            <div className="flex items-center bg-slate-800 border border-slate-700 rounded-xl p-0.5 text-xs shadow-inner">
               <button
+                type="button"
                 onClick={handleZoomOut}
-                disabled={zoom <= 0.5}
-                title="Zoom Out"
-                className="p-1.5 hover:bg-slate-700 disabled:opacity-40 rounded-lg transition"
+                disabled={zoom <= 1.0}
+                title="Zoom Out (Min 100%)"
+                className="p-1.5 hover:bg-slate-700 active:bg-slate-600 disabled:opacity-40 rounded-lg transition"
               >
                 <ZoomOut className="w-4 h-4" />
               </button>
+              
               <button
+                type="button"
                 onClick={handleResetZoom}
-                title="Reset Zoom to 100%"
-                className="px-2 py-1 font-bold text-[11px] text-slate-300 hover:text-white"
+                title="Reset to 100% Centered"
+                className="px-2.5 py-1 font-bold text-[11px] text-slate-200 hover:text-white transition flex items-center gap-1"
               >
-                {Math.round(zoom * 100)}%
+                <span>{Math.round(zoom * 100)}%</span>
+                {zoom > 1.0 && <Maximize2 className="w-2.5 h-2.5 text-blue-400 opacity-70" />}
               </button>
+
               <button
+                type="button"
                 onClick={handleZoomIn}
-                disabled={zoom >= 4}
-                title="Zoom In"
-                className="p-1.5 hover:bg-slate-700 disabled:opacity-40 rounded-lg transition"
+                disabled={zoom >= 4.0}
+                title="Zoom In (Max 400%)"
+                className="p-1.5 hover:bg-slate-700 active:bg-slate-600 disabled:opacity-40 rounded-lg transition"
               >
                 <ZoomIn className="w-4 h-4" />
               </button>
+              
               <button
+                type="button"
                 onClick={handleRotate}
                 title="Rotate 90° Clockwise"
-                className="p-1.5 hover:bg-slate-700 rounded-lg transition text-slate-300 hover:text-white border-l border-slate-700"
+                className="p-1.5 hover:bg-slate-700 active:bg-slate-600 rounded-lg transition text-slate-300 hover:text-white border-l border-slate-700"
               >
                 <RotateCw className="w-4 h-4" />
               </button>
@@ -544,12 +679,13 @@ export function MedicalDocumentViewerModal({
 
             {/* Download Button */}
             <button
+              type="button"
               onClick={handleDownload}
               disabled={downloading}
               className={`px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition shadow-sm ${
                 downloadSuccess 
                   ? "bg-emerald-600 text-white" 
-                  : "bg-blue-600 hover:bg-blue-500 text-white"
+                  : "bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white"
               }`}
               title={`Download ${format.extension.toUpperCase()}`}
             >
@@ -568,9 +704,10 @@ export function MedicalDocumentViewerModal({
             {/* Delete Button */}
             {onDelete && (
               <button
+                type="button"
                 onClick={handleDelete}
                 disabled={deleting}
-                className="px-2.5 py-1.5 bg-red-600/80 hover:bg-red-600 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1 transition"
+                className="px-2.5 py-1.5 bg-red-600/80 hover:bg-red-600 active:bg-red-700 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1 transition"
                 title="Delete this document"
               >
                 {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
@@ -580,8 +717,9 @@ export function MedicalDocumentViewerModal({
 
             {/* Close Button */}
             <button
+              type="button"
               onClick={onClose}
-              className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300 hover:text-white transition"
+              className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 active:bg-slate-600 flex items-center justify-center text-slate-300 hover:text-white transition"
               title="Close Viewer"
             >
               <X className="w-5 h-5" />
@@ -589,9 +727,10 @@ export function MedicalDocumentViewerModal({
           </div>
         </div>
 
-        {/* Viewer Main Viewport with Two-Finger Pinch-to-Zoom & Drag-Pan */}
+        {/* Viewer Main Viewport with Silky Smooth Pinch-to-Zoom & Drag-Pan */}
         <div 
-          className="flex-1 bg-slate-950 relative overflow-hidden flex items-center justify-center cursor-default select-none"
+          ref={viewportRef}
+          className="flex-1 bg-slate-950 relative overflow-hidden flex items-center justify-center select-none"
           style={{ touchAction: "none" }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
@@ -604,7 +743,7 @@ export function MedicalDocumentViewerModal({
           onTouchCancel={handleTouchEnd}
         >
           {format.isPdf ? (
-            <div className="w-full h-full flex flex-col items-center justify-center overflow-hidden p-3">
+            <div className="w-full h-full flex flex-col items-center justify-center overflow-hidden p-2">
               {pdfLoading && (
                 <div className="flex flex-col items-center gap-3 text-slate-400">
                   <Loader2 className="w-10 h-10 animate-spin text-blue-500" />
@@ -623,6 +762,7 @@ export function MedicalDocumentViewerModal({
                   </div>
                   <div className="flex justify-center gap-2">
                     <button
+                      type="button"
                       onClick={handleDownload}
                       className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-xl font-bold text-xs flex items-center gap-1.5 text-white"
                     >
@@ -643,15 +783,12 @@ export function MedicalDocumentViewerModal({
               )}
 
               <div 
-                className={`transition-transform duration-75 flex items-center justify-center ${pdfLoading || pdfError ? 'hidden' : 'block'}`}
-                style={{
-                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-                  cursor: zoom > 1 ? (isDragging ? "grabbing" : "grab") : "default"
-                }}
+                className={`flex items-center justify-center ${pdfLoading || pdfError ? 'hidden' : 'block'}`}
+                style={transformStyle}
               >
                 <canvas 
                   ref={canvasRef} 
-                  className="rounded-lg shadow-2xl bg-white max-w-full max-h-[78vh] object-contain border border-slate-700 pointer-events-none"
+                  className="rounded-lg shadow-2xl bg-white max-w-full max-h-[78vh] object-contain border border-slate-700 pointer-events-none select-none"
                 />
               </div>
 
@@ -659,7 +796,12 @@ export function MedicalDocumentViewerModal({
               {numPages > 1 && !pdfLoading && !pdfError && (
                 <div className="absolute bottom-4 bg-slate-900/90 border border-slate-700 backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-3 text-xs font-bold text-slate-300 shadow-xl z-10">
                   <button
-                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    type="button"
+                    onClick={() => {
+                      setCurrentPage(p => Math.max(1, p - 1))
+                      setZoom(1.0)
+                      setPan({ x: 0, y: 0 })
+                    }}
                     disabled={currentPage <= 1}
                     className="p-1 hover:text-white disabled:opacity-30 transition"
                   >
@@ -667,7 +809,12 @@ export function MedicalDocumentViewerModal({
                   </button>
                   <span>Page {currentPage} of {numPages}</span>
                   <button
-                    onClick={() => setCurrentPage(p => Math.min(numPages, p + 1))}
+                    type="button"
+                    onClick={() => {
+                      setCurrentPage(p => Math.min(numPages, p + 1))
+                      setZoom(1.0)
+                      setPan({ x: 0, y: 0 })
+                    }}
                     disabled={currentPage >= numPages}
                     className="p-1 hover:text-white disabled:opacity-30 transition"
                   >
@@ -679,21 +826,16 @@ export function MedicalDocumentViewerModal({
           ) : (
             <div 
               className="w-full h-full flex items-center justify-center overflow-hidden p-2"
-              style={{
-                cursor: zoom > 1 ? (isDragging ? "grabbing" : "grab") : "default"
-              }}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={format.normalizedUrl}
-                alt={doc.title}
-                draggable={false}
-                style={{
-                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom}) rotate(${rotation}deg)`,
-                  transition: isDragging ? "none" : "transform 100ms ease-out"
-                }}
-                className="max-w-full max-h-[82vh] object-contain rounded-xl shadow-2xl pointer-events-none select-none"
-              />
+              <div style={transformStyle}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={format.normalizedUrl}
+                  alt={doc.title}
+                  draggable={false}
+                  className="max-w-full max-h-[82vh] object-contain rounded-xl shadow-2xl pointer-events-none select-none"
+                />
+              </div>
             </div>
           )}
         </div>
@@ -703,19 +845,28 @@ export function MedicalDocumentViewerModal({
           <div className="flex items-center gap-3 truncate">
             {doc.extraRemark ? (
               <span className="truncate font-medium">
-                💡 <span className="font-bold text-white">Result:</span> {doc.extraRemark}
+                📋 <span className="font-bold text-white">Result:</span> {doc.extraRemark}
               </span>
             ) : (
               <span className="text-[11px] text-slate-400">
-                ✌️ <span className="text-slate-300 font-medium">Two-finger pinch to zoom</span> • Double-tap to quick zoom • Drag to pan
+                🔍 <span className="text-slate-300 font-medium">Pinch to zoom</span> • Double-tap to quick zoom • Drag to pan
               </span>
             )}
           </div>
-          {doc.category && (
-            <span className="px-2.5 py-0.5 bg-slate-800 border border-slate-700 rounded-lg text-emerald-400 font-bold shrink-0 text-[11px]">
-              {doc.category}
+          <div className="flex items-center gap-3 shrink-0">
+            {zoom > 1.0 && (
+              <button
+                type="button"
+                onClick={handleResetZoom}
+                className="text-[11px] font-bold text-blue-400 hover:text-blue-300 underline"
+              >
+                Reset to Center
+              </button>
+            )}
+            <span className="text-[11px] text-slate-500 font-mono">
+              ElderSaath Doc Viewer
             </span>
-          )}
+          </div>
         </div>
       </div>
     </div>
