@@ -1,4 +1,4 @@
-﻿import { NextResponse } from "next/server"
+import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 
@@ -49,13 +49,21 @@ export async function PATCH(req: Request) {
 export async function GET(req: Request) {
   try {
     const session = await auth()
+    let targetElderId = session?.user?.id
+
+    const alarmSecret = req.headers.get("x-app-alarm-secret")
+    const url = new URL(req.url)
+    const qElderId = url.searchParams.get("elderId")
+    if (!targetElderId && alarmSecret === "ElderSaath-Hardware-Alarm-v1" && qElderId) {
+      targetElderId = qElderId
+    }
     
-    if (!session || !session.user.id) {
+    if (!targetElderId) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 })
     }
 
     const profile = await prisma.elderProfile.findUnique({
-      where: { userId: session.user.id }
+      where: { userId: targetElderId }
     })
 
     return NextResponse.json({ 

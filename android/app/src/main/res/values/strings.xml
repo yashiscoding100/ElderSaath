@@ -4,4 +4,5 @@
     <string name="title_activity_main">ElderSaath</string>
     <string name="package_name">com.eldersaath.app</string>
     <string name="custom_url_scheme">com.eldersaath.app</string>
+    <string name="health_widget_description">ElderSaath Daily Health Vitals Quick Check-in</string>
 </resources>

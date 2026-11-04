@@ -90,6 +90,29 @@ export default function DailyCheckin() {
         const d = await res.json()
         throw new Error(d.message || "Failed to save")
       }
+
+      // Sync Native Android Health Check Widget
+      try {
+        const cap = (window as any).Capacitor
+        const AlarmSyncPlugin = cap?.Plugins?.AlarmSyncPlugin
+        if (AlarmSyncPlugin && typeof AlarmSyncPlugin.syncHealthPreferences === "function") {
+          const todayStr = new Date().toISOString().split("T")[0]
+          await AlarmSyncPlugin.syncHealthPreferences({
+            requiredVitals: requiredVitals.join(","),
+            healthCheckDone: true,
+            bp: data.bp || "",
+            sugar: data.sugar || "",
+            spo2: data.spo2 || "",
+            pulse: data.pulse || "",
+            temp: data.temperature || "",
+            weight: data.weight || "",
+            date: todayStr
+          })
+        }
+      } catch (widgetErr) {
+        console.warn("Failed to sync widget after checkin:", widgetErr)
+      }
+
       router.push("/elder/home")
     } catch (err: any) {
       setError(err.message)

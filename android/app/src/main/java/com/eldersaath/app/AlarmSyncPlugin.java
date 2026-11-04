@@ -295,4 +295,68 @@ public class AlarmSyncPlugin extends Plugin {
             call.reject("Failed to get scheduled alarms: " + e.getMessage());
         }
     }
+
+    @PluginMethod
+    public void syncHealthPreferences(PluginCall call) {
+        try {
+            String requiredVitals = call.getString("requiredVitals", "BP,SUGAR,SPO2,PULSE,TEMP,WEIGHT");
+            String elderId = call.getString("elderId", "");
+            String elderName = call.getString("elderName", "Elder");
+            Boolean healthCheckDone = call.getBoolean("healthCheckDone", false);
+            String lastBp = call.getString("bp", "");
+            String lastSugar = call.getString("sugar", "");
+            String lastSpo2 = call.getString("spo2", "");
+            String lastPulse = call.getString("pulse", "");
+            String lastTemp = call.getString("temp", "");
+            String lastWeight = call.getString("weight", "");
+            String lastDate = call.getString("date", "");
+
+            SharedPreferences prefs = getContext().getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+            SharedPreferences.Editor editor = prefs.edit()
+                .putString("health_required_vitals", requiredVitals);
+
+            if (healthCheckDone != null) editor.putBoolean("health_check_done_today", healthCheckDone);
+            if (elderId != null && !elderId.isEmpty()) editor.putString("elder_id", elderId);
+            if (elderName != null && !elderName.isEmpty()) editor.putString("elder_name", elderName);
+            if (lastBp != null && !lastBp.isEmpty()) editor.putString("vital_last_bp", lastBp);
+            if (lastSugar != null && !lastSugar.isEmpty()) editor.putString("vital_last_sugar", lastSugar);
+            if (lastSpo2 != null && !lastSpo2.isEmpty()) editor.putString("vital_last_spo2", lastSpo2);
+            if (lastPulse != null && !lastPulse.isEmpty()) editor.putString("vital_last_pulse", lastPulse);
+            if (lastTemp != null && !lastTemp.isEmpty()) editor.putString("vital_last_temp", lastTemp);
+            if (lastWeight != null && !lastWeight.isEmpty()) editor.putString("vital_last_weight", lastWeight);
+            if (lastDate != null && !lastDate.isEmpty()) editor.putString("health_vitals_date", lastDate);
+
+            editor.apply();
+
+            HealthCheckWidgetProvider.updateAllWidgets(getContext());
+
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            Log.i(TAG, "Health check widget preferences synced: " + requiredVitals + ", doneToday=" + healthCheckDone);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to sync health preferences to widget", e);
+            call.reject("Failed to sync health preferences: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void getHealthWidgetData(PluginCall call) {
+        try {
+            SharedPreferences prefs = getContext().getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+            JSObject ret = new JSObject();
+            ret.put("requiredVitals", prefs.getString("health_required_vitals", "BP,SUGAR,SPO2,PULSE,TEMP,WEIGHT"));
+            ret.put("vitalsDate", prefs.getString("health_vitals_date", ""));
+            ret.put("checkDoneToday", prefs.getBoolean("health_check_done_today", false));
+            ret.put("bp", prefs.getString("vital_last_bp", ""));
+            ret.put("sugar", prefs.getString("vital_last_sugar", ""));
+            ret.put("spo2", prefs.getString("vital_last_spo2", ""));
+            ret.put("pulse", prefs.getString("vital_last_pulse", ""));
+            ret.put("temp", prefs.getString("vital_last_temp", ""));
+            ret.put("weight", prefs.getString("vital_last_weight", ""));
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Failed to get health widget data: " + e.getMessage());
+        }
+    }
 }

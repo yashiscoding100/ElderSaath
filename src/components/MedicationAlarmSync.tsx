@@ -150,6 +150,24 @@ export function MedicationAlarmSync() {
           }
         }
       }
+
+      // 4. Sync Health Check Preferences & Required Vitals to Android Widget
+      const prefRes = await fetch("/api/elder/preferences").catch(() => null)
+      if (prefRes && prefRes.ok) {
+        const prefData = await prefRes.json()
+        if (prefData?.requiredVitals && AlarmSyncPlugin && typeof AlarmSyncPlugin.syncHealthPreferences === "function") {
+          try {
+            await AlarmSyncPlugin.syncHealthPreferences({
+              requiredVitals: prefData.requiredVitals,
+              elderId: session.user.id,
+              elderName: session.user.name || "Elder"
+            })
+            console.log("[MedicationAlarmSync] Health Check Widget preferences synced:", prefData.requiredVitals)
+          } catch (prefErr) {
+            console.warn("[MedicationAlarmSync] Health pref sync error:", prefErr)
+          }
+        }
+      }
     } catch (err) {
       console.warn("[MedicationAlarmSync] Sync fetch error:", err)
     } finally {
