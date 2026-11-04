@@ -112,3 +112,54 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ message: "Failed to delete" }, { status: 500 })
   }
 }
+
+export async function PATCH(req: Request) {
+  const session = await auth()
+  if (!session) return NextResponse.json({ message: "Unauthorized" }, { status: 401 })
+
+  try {
+    const data = await req.json()
+    const { id, title, description, time, triggerAlarm, frequency } = data
+
+    if (!id) {
+      return NextResponse.json({ message: "Missing id" }, { status: 400 })
+    }
+
+    const task = await prisma.task.findUnique({ where: { id } })
+    if (!task) {
+      return NextResponse.json({ message: "Task not found" }, { status: 404 })
+    }
+
+    if (session.user.role === "CHILD") {
+      const rel = await prisma.caregiverRelationship.findUnique({
+        where: { elderId_childId: { elderId: task.elderId, childId: session.user.id } }
+      })
+      if (!rel || rel.status !== "ACTIVE") {
+        return NextResponse.json({ message: "Forbidden" }, { status: 403 })
+      }
+    } else if (session.user.role === "ELDER" && task.elderId !== session.user.id) {
+      return NextResponse.json({ message: "Forbidden" }, { status: 403 })
+    }
+
+    const updatedTask = await prisma.task.update({
+      where: { id },
+      data: {
+        title: title !== undefined ? title : task.title,
+        description: description !== undefined ? description : task.description,
+        time: time !== undefined ? time : task.time,
+        triggerAlarm: triggerAlarm !== undefined ? triggerAlarm === true : task.triggerAlarm,
+        frequency: frequency !== undefined ? (frequency || "DAILY") : task.frequency
+      }
+    })
+
+    // If task has alarm enabled or previously had alarm, trigger silent hardware alarm sync immediately
+    if (updatedTask.triggerAlarm || task.triggerAlarm) {
+      await sendSilentAlarmSchedulePush(task.elderId).catch(() => {})
+    }
+
+    return NextResponse.json(updatedTask, { status: 200 })
+  } catch (error: any) {
+    console.error("[api/tasks PATCH] Error:", error)
+    return NextResponse.json({ message: "Failed to update task: " + error.message }, { status: 500 })
+  }
+}

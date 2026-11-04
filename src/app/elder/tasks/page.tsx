@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma"
 import { redirect } from "next/navigation"
 import { ElderAddTaskForm } from "./ElderAddTaskForm"
 import { DeleteTaskButton } from "@/app/child/tasks/DeleteTaskButton"
+import { EditTaskModal } from "@/app/child/tasks/EditTaskModal"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 
@@ -73,6 +74,8 @@ export default async function ElderThingsToDo() {
                         {formatFreq(task.frequency)}
                       </span>
                       {(task as any).triggerAlarm && <span className="flex items-center gap-1 text-xs font-bold text-red-500 bg-red-50 px-2 py-1 rounded-md"><Bell className="w-3 h-3" /> ALARM</span>}
+                      <EditTaskModal task={task} variant="elder" />
+                      <DeleteTaskButton id={task.id} />
                     </div>
                   <h2 className={`text-2xl font-bold ${isCompleted ? 'text-green-800 line-through opacity-70' : 'text-gray-900'}`}>
                     {task.title}

@@ -6,6 +6,7 @@ import { redirect } from "next/navigation"
 import { Bell, ArrowLeft } from "lucide-react"
 import Link from "next/link"
 import { DeleteTaskButton } from "./DeleteTaskButton"
+import { EditTaskModal } from "./EditTaskModal"
 
 export default async function ChildThingsToDo() {
   const session = await auth()
@@ -98,7 +99,12 @@ export default async function ChildThingsToDo() {
                         )}
                       </td>
                       <td className="p-4 px-6 text-slate-500 uppercase tracking-wider text-xs font-semibold">{formatFreq(task.frequency)}</td>
-                      <td className="p-4 px-6 text-right"><DeleteTaskButton id={task.id} /></td>
+                      <td className="p-4 px-6 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <EditTaskModal task={task} />
+                          <DeleteTaskButton id={task.id} />
+                        </div>
+                      </td>
                   </tr>
                 ))}
               </tbody>
