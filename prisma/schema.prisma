@@ -134,8 +134,11 @@ model Medication {
   frequency    String
   time         String // E.g., "08:00 AM"
   instructions String?
-  startDate    DateTime?
-  endDate      DateTime?
+  startDate        DateTime?
+  endDate          DateTime?
+  durationValue    Int?
+  durationUnit     String? // "DAYS", "WEEKS", "MONTHS"
+  durationNotified Boolean   @default(false)
 
   logs      MedicationLog[]
   createdAt DateTime        @default(now())

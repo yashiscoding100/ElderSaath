@@ -67,8 +67,10 @@ export default async function ChildDashboard() {
         take: 5
       })
 
-      const totalMeds = medications.length
-      const takenMeds = medications.filter(m => m.logs.some(l => l.status === "TAKEN")).length
+      const nowMs = Date.now()
+      const activeMeds = medications.filter(m => !m.endDate || new Date(m.endDate).getTime() >= nowMs)
+      const totalMeds = activeMeds.length
+      const takenMeds = activeMeds.filter(m => m.logs.some(l => l.status === "TAKEN")).length
 
       const bp = latestMeasurements.find(m => m.type === "BP")
       const sugar = latestMeasurements.find(m => m.type === "SUGAR")
@@ -340,3 +342,4 @@ export default async function ChildDashboard() {
     </div>
   )
 }
+

@@ -55,8 +55,10 @@ export default async function ElderHome() {
     include: { child: { select: { name: true, email: true } } }
   })
 
-  const totalMeds = medications.length
-  const takenMeds = medications.filter(m => m.logs.some(l => l.status === "TAKEN")).length
+  const nowMs = Date.now()
+  const activeMedications = medications.filter(m => !m.endDate || new Date(m.endDate).getTime() >= nowMs)
+  const totalMeds = activeMedications.length
+  const takenMeds = activeMedications.filter(m => m.logs.some(l => l.status === "TAKEN")).length
   const healthCheckDone = todayMeasurements.length > 0
   const showHealthCheckAsDone = healthCheckDone || !isCheckRequiredToday
 
@@ -229,3 +231,4 @@ export default async function ElderHome() {
     </div>
   )
 }
+

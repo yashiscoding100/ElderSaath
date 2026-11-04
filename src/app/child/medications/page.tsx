@@ -27,6 +27,7 @@ export default async function ChildMedications() {
 
   const medications = await prisma.medication.findMany({
     where: { elderId: relationship.elderId },
+    orderBy: { createdAt: "desc" }
   })
 
   return (
@@ -68,6 +69,7 @@ export default async function ChildMedications() {
                   <th className="p-4 px-6">Dosage</th>
                   <th className="p-4 px-6">Time</th>
                   <th className="p-4 px-6">Frequency</th>
+                  <th className="p-4 px-6">Course Duration</th>
                   <th className="p-4 px-6 text-right">Actions</th>
                 </tr>
               </thead>

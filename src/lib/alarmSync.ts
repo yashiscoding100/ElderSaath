@@ -20,7 +20,15 @@ export async function getUnifiedElderAlarms(elderId: string): Promise<UnifiedAla
 
   try {
     const [meds, tasks] = await Promise.all([
-      prisma.medication.findMany({ where: { elderId } }),
+      prisma.medication.findMany({ 
+        where: { 
+          elderId,
+          OR: [
+            { endDate: null },
+            { endDate: { gte: new Date() } }
+          ]
+        } 
+      }),
       prisma.task.findMany({ where: { elderId, triggerAlarm: true } })
     ])
 

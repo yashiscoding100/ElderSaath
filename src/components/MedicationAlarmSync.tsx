@@ -22,9 +22,16 @@ export function MedicationAlarmSync() {
       const meds = medsRes && medsRes.ok ? await medsRes.json() : []
       const tasks = tasksRes && tasksRes.ok ? await tasksRes.json() : []
 
-      // Build unified alarm items list
+      // Build unified alarm items list (excluding medications whose prescribed duration has finished)
+      const nowMs = Date.now()
+      const activeMeds = Array.isArray(meds) ? meds.filter((m: any) => {
+        if (!m.endDate) return true
+        const endMs = new Date(m.endDate).getTime()
+        return nowMs <= endMs
+      }) : []
+
       const alarmItems: any[] = [
-        ...(Array.isArray(meds) ? meds.map((m: any) => ({
+        ...activeMeds.map((m: any) => ({
           id: m.id,
           name: m.name,
           dosage: m.dosage || "",
@@ -36,7 +43,7 @@ export function MedicationAlarmSync() {
           label: `Time for ${m.name}`,
           body: `Dosage: ${m.dosage || "Scheduled Dose"}${m.instructions ? ". " + m.instructions : ""}`,
           actionText: "TAKE MEDICINE / STOP ALARM"
-        })) : []),
+        })),
         ...(Array.isArray(tasks) ? tasks.filter((t: any) => t.triggerAlarm && t.time).map((t: any) => ({
           id: t.id,
           name: t.title,
