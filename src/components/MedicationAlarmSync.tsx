@@ -117,6 +117,24 @@ export function MedicationAlarmSync() {
           }
         }
       }
+
+      // 3. Sync Global Custom Alarm Tone Settings
+      const toneRes = await fetch("/api/alarm-tone?t=" + Date.now()).catch(() => null)
+      if (toneRes && toneRes.ok) {
+        const toneData = await toneRes.json()
+        if (toneData?.config && AlarmSyncPlugin && typeof AlarmSyncPlugin.syncAlarmTone === "function") {
+          try {
+            await AlarmSyncPlugin.syncAlarmTone({
+              enabled: toneData.config.enabled === true,
+              toneUrl: toneData.config.toneUrl || "",
+              toneTitle: toneData.config.toneTitle || "Custom Tone"
+            })
+            console.log(`[MedicationAlarmSync] Alarm tone synced: enabled=${toneData.config.enabled}`)
+          } catch (toneErr) {
+            console.warn("[MedicationAlarmSync] Alarm tone sync error:", toneErr)
+          }
+        }
+      }
     } catch (err) {
       console.warn("[MedicationAlarmSync] Sync fetch error:", err)
     } finally {

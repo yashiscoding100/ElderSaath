@@ -5,7 +5,13 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Build;
+import android.util.Base64;
 import android.util.Log;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.HashSet;
 import java.util.Set;
 import com.getcapacitor.JSArray;
@@ -76,6 +82,82 @@ public class AlarmSyncPlugin extends Plugin {
         } catch (Exception e) {
             call.reject("Error clearing pending medication: " + e.getMessage());
         }
+    }
+
+    @PluginMethod
+    public void syncAlarmTone(PluginCall call) {
+        try {
+            boolean enabled = call.getBoolean("enabled", false);
+            String toneUrl = call.getString("toneUrl", "");
+            String toneTitle = call.getString("toneTitle", "Custom Tone");
+
+            SharedPreferences prefs = getContext().getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+            prefs.edit()
+                .putBoolean("custom_tone_enabled", enabled)
+                .putString("custom_tone_url", toneUrl)
+                .putString("custom_tone_title", toneTitle)
+                .apply();
+
+            if (enabled && toneUrl != null && !toneUrl.trim().isEmpty()) {
+                cacheAlarmTone(getContext(), toneUrl);
+            }
+
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            ret.put("enabled", enabled);
+            Log.i(TAG, "Global alarm tone synced: enabled=" + enabled + ", title=" + toneTitle);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e(TAG, "Error syncing alarm tone", e);
+            call.reject("Error syncing alarm tone: " + e.getMessage());
+        }
+    }
+
+    public static void cacheAlarmTone(final Context context, final String toneUrl) {
+        if (context == null || toneUrl == null || toneUrl.trim().isEmpty()) return;
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    File targetFile = new File(context.getFilesDir(), "custom_alarm_tone.mp3");
+                    if (toneUrl.startsWith("data:")) {
+                        int commaIdx = toneUrl.indexOf(",");
+                        if (commaIdx != -1) {
+                            String base64Data = toneUrl.substring(commaIdx + 1);
+                            byte[] audioBytes = Base64.decode(base64Data, Base64.DEFAULT);
+                            FileOutputStream fos = new FileOutputStream(targetFile);
+                            fos.write(audioBytes);
+                            fos.flush();
+                            fos.close();
+                            Log.i("AlarmSyncPlugin", "Cached base64 custom alarm tone: " + targetFile.length() + " bytes");
+                        }
+                    } else if (toneUrl.startsWith("http")) {
+                        URL url = new URL(toneUrl);
+                        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                        conn.setConnectTimeout(10000);
+                        conn.setReadTimeout(15000);
+                        conn.connect();
+                        if (conn.getResponseCode() >= 200 && conn.getResponseCode() < 300) {
+                            InputStream is = conn.getInputStream();
+                            FileOutputStream fos = new FileOutputStream(targetFile);
+                            byte[] buffer = new byte[4096];
+                            int read;
+                            while ((read = is.read(buffer)) != -1) {
+                                fos.write(buffer, 0, read);
+                            }
+                            fos.flush();
+                            fos.close();
+                            is.close();
+                            Log.i("AlarmSyncPlugin", "Cached remote custom alarm tone: " + targetFile.length() + " bytes");
+                        }
+                        conn.disconnect();
+                    }
+                } catch (Exception e) {
+                    Log.w("AlarmSyncPlugin", "Failed to cache custom alarm tone: " + e.getMessage());
+                }
+            }
+        }).start();
     }
 
     @PluginMethod

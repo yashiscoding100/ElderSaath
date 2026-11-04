@@ -4,6 +4,8 @@ import { AdminDemoToggleCard } from "./AdminDemoToggleCard"
 import { isDemoEnabled, ensureDemoAccountsExist } from "@/lib/demoConfig"
 import { getStartupPopupConfig } from "@/lib/startupPopup"
 import { AdminStartupPopupCard } from "./AdminStartupPopupCard"
+import { getAlarmToneConfig } from "@/lib/alarmToneConfig"
+import { AdminAlarmToneCard } from "./AdminAlarmToneCard"
 
 export default async function AdminDashboard() {
   let userCount = 0
@@ -15,6 +17,7 @@ export default async function AdminDashboard() {
   let notificationCount = 0
   let demoEnabled = true
   let startupConfig = await getStartupPopupConfig()
+  let alarmToneConfig = await getAlarmToneConfig()
 
   try {
     // Ensure demo accounts exist and are linked
@@ -66,6 +69,9 @@ export default async function AdminDashboard() {
         </div>
       </div>
 
+      {/* Global Custom Alarm Tone Controls */}
+      <AdminAlarmToneCard initialConfig={alarmToneConfig} />
+
       {/* App Startup Video / Photo / Notice Control Card */}
       <AdminStartupPopupCard initialConfig={startupConfig} />
 
@@ -88,4 +94,3 @@ export default async function AdminDashboard() {
     </div>
   )
 }
-

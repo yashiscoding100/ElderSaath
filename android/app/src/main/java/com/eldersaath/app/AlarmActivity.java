@@ -29,6 +29,7 @@ import android.widget.Toast;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.File;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -360,25 +361,48 @@ public class AlarmActivity extends Activity {
 
     private void startAlarmSoundAndVibration() {
         try {
-            // Audio via MediaPlayer (Single Continuous Loop on ALARM channel)
-            Uri alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
-            if (alarmUri == null) {
-                alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+            SharedPreferences prefs = getSharedPreferences("ElderSaathAlarms", Context.MODE_PRIVATE);
+            boolean customToneEnabled = prefs.getBoolean("custom_tone_enabled", false);
+            String customToneUrl = prefs.getString("custom_tone_url", "");
+            File localToneFile = new File(getFilesDir(), "custom_alarm_tone.mp3");
+
+            boolean customPlayed = false;
+            if (customToneEnabled) {
+                try {
+                    if (localToneFile.exists() && localToneFile.length() > 500) {
+                        Log.i(TAG, "Playing local cached custom alarm tone: " + localToneFile.length() + " bytes");
+                        mediaPlayer = new MediaPlayer();
+                        mediaPlayer.setDataSource(localToneFile.getAbsolutePath());
+                        setupAndPlayMediaPlayer();
+                        customPlayed = true;
+                    } else if (customToneUrl != null && !customToneUrl.trim().isEmpty() && customToneUrl.startsWith("http")) {
+                        Log.i(TAG, "Playing remote custom alarm tone: " + customToneUrl);
+                        mediaPlayer = new MediaPlayer();
+                        mediaPlayer.setDataSource(customToneUrl);
+                        setupAndPlayMediaPlayer();
+                        customPlayed = true;
+                    }
+                } catch (Exception customEx) {
+                    Log.w(TAG, "Failed to play custom alarm tone, seamlessly falling back to system default tone", customEx);
+                    customPlayed = false;
+                    if (mediaPlayer != null) {
+                        try { mediaPlayer.release(); } catch (Exception ignored) {}
+                        mediaPlayer = null;
+                    }
+                }
             }
-            mediaPlayer = new MediaPlayer();
-            mediaPlayer.setDataSource(getApplicationContext(), alarmUri);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                AudioAttributes attrs = new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build();
-                mediaPlayer.setAudioAttributes(attrs);
-            } else {
-                mediaPlayer.setAudioStreamType(AudioManager.STREAM_ALARM);
+
+            // If custom tone is disabled, or if it failed to play: use phone's system default alarm tone
+            if (!customPlayed) {
+                Log.i(TAG, "Using phone's native system default alarm tone (customToneEnabled=" + customToneEnabled + ")");
+                Uri alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+                if (alarmUri == null) {
+                    alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+                }
+                mediaPlayer = new MediaPlayer();
+                mediaPlayer.setDataSource(getApplicationContext(), alarmUri);
+                setupAndPlayMediaPlayer();
             }
-            mediaPlayer.setLooping(true);
-            mediaPlayer.prepare();
-            mediaPlayer.start();
         } catch (Exception e) {
             Log.w(TAG, "MediaPlayer failed, using RingtoneManager fallback", e);
             try {
@@ -400,6 +424,22 @@ public class AlarmActivity extends Activity {
                 }
             }
         } catch (Exception ignored) {}
+    }
+
+    private void setupAndPlayMediaPlayer() throws Exception {
+        if (mediaPlayer == null) return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            AudioAttributes attrs = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build();
+            mediaPlayer.setAudioAttributes(attrs);
+        } else {
+            mediaPlayer.setAudioStreamType(AudioManager.STREAM_ALARM);
+        }
+        mediaPlayer.setLooping(true);
+        mediaPlayer.prepare();
+        mediaPlayer.start();
     }
 
     public void stopAlarmAndSound() {

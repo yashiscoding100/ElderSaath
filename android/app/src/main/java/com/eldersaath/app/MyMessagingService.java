@@ -71,6 +71,27 @@ public class MyMessagingService extends MessagingService {
             return;
         }
 
+        // 3. SILENT BACKGROUND SYNC: Update global alarm tone
+        if (remoteMessage.getData().size() > 0 && "SYNC_ALARM_TONE".equals(remoteMessage.getData().get("type"))) {
+            Log.i("ALARM_DEBUG", "FCM SYNC_ALARM_TONE RECEIVED - Updating global alarm tone");
+            String enabledStr = remoteMessage.getData().get("customToneEnabled");
+            String toneUrl = remoteMessage.getData().get("customToneUrl");
+            String toneTitle = remoteMessage.getData().get("customToneTitle");
+            boolean enabled = "true".equalsIgnoreCase(enabledStr);
+
+            SharedPreferences prefs = getSharedPreferences("ElderSaathAlarms", Context.MODE_PRIVATE);
+            prefs.edit()
+                .putBoolean("custom_tone_enabled", enabled)
+                .putString("custom_tone_url", toneUrl != null ? toneUrl : "")
+                .putString("custom_tone_title", toneTitle != null ? toneTitle : "Custom Tone")
+                .apply();
+
+            if (enabled && toneUrl != null && !toneUrl.trim().isEmpty()) {
+                AlarmSyncPlugin.cacheAlarmTone(this, toneUrl);
+            }
+            return;
+        }
+
         if (remoteMessage.getData().size() > 0 && "ALARM".equals(remoteMessage.getData().get("type"))) {
             
             long now = System.currentTimeMillis();
