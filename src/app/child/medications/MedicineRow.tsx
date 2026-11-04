@@ -4,7 +4,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { BellRing, Calendar } from "lucide-react"
 import { EditMedicineModal } from "./EditMedicineModal"
-import { formatDurationSummary, isMedicationExpired } from "@/lib/medicationDuration"
+import { formatDurationSummary, isMedicationExpired } from "@/lib/medicationDurationUtils"
 
 type Medication = {
   id: string

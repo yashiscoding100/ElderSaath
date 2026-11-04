@@ -71,50 +71,36 @@ export function detectDocumentFormat(fileUrl: string, declaredType?: string): {
     }
   }
 
-  // Trim whitespace
+  // Clean and check magic bytes in base64:
   const cleanBase64 = base64Part.trim().substring(0, 30)
 
-  // Check magic bytes in base64:
-  // %PDF -> 'JVBER'
-  // JPEG -> '/9j/'
-  // PNG  -> 'iVBOR'
-  // WebP -> 'UklGR'
-  if (cleanBase64.startsWith("JVBER")) {
+  // Explicit PDF check: magic bytes '%PDF' ('JVBER') OR declared as pdf without image data
+  if (cleanBase64.startsWith("JVBER") || (headerMime.includes("pdf") && !cleanBase64.startsWith("/9j/") && !cleanBase64.startsWith("iVBOR") && !cleanBase64.startsWith("UklGR"))) {
     const normalized = fileUrl.startsWith("data:application/pdf") ? fileUrl : `data:application/pdf;base64,${base64Part}`
     return { isPdf: true, isImage: false, mimeType: "application/pdf", normalizedUrl: normalized, extension: "pdf" }
   }
 
-  if (cleanBase64.startsWith("/9j/")) {
-    const normalized = fileUrl.startsWith("data:image/jpeg") ? fileUrl : `data:image/jpeg;base64,${base64Part}`
-    return { isPdf: false, isImage: true, mimeType: "image/jpeg", normalizedUrl: normalized, extension: "jpg" }
+  // Image detection
+  let imgMime = "image/jpeg"
+  let ext = "jpg"
+
+  if (cleanBase64.startsWith("iVBOR") || headerMime.includes("png")) {
+    imgMime = "image/png"
+    ext = "png"
+  } else if (cleanBase64.startsWith("UklGR") || headerMime.includes("webp")) {
+    imgMime = "image/webp"
+    ext = "webp"
+  } else if (cleanBase64.startsWith("/9j/") || headerMime.includes("jpeg") || headerMime.includes("jpg")) {
+    imgMime = "image/jpeg"
+    ext = "jpg"
   }
 
-  if (cleanBase64.startsWith("iVBOR")) {
-    const normalized = fileUrl.startsWith("data:image/png") ? fileUrl : `data:image/png;base64,${base64Part}`
-    return { isPdf: false, isImage: true, mimeType: "image/png", normalizedUrl: normalized, extension: "png" }
-  }
+  // If fileUrl doesn't have data: prefix, construct it
+  const normalized = fileUrl.startsWith("data:") && !fileUrl.startsWith("data:application/pdf")
+    ? fileUrl 
+    : `data:${imgMime};base64,${base64Part}`
 
-  if (cleanBase64.startsWith("UklGR")) {
-    const normalized = fileUrl.startsWith("data:image/webp") ? fileUrl : `data:image/webp;base64,${base64Part}`
-    return { isPdf: false, isImage: true, mimeType: "image/webp", normalizedUrl: normalized, extension: "webp" }
-  }
-
-  // 3. Fallback based on declared type or presence of string markers
-  if (headerMime.includes("pdf") || declaredType?.includes("pdf")) {
-    return { isPdf: true, isImage: false, mimeType: "application/pdf", normalizedUrl: fileUrl, extension: "pdf" }
-  }
-
-  if (headerMime.startsWith("image/") || declaredType?.startsWith("image/")) {
-    const ext = headerMime.split("/")[1] || "jpg"
-    return { isPdf: false, isImage: true, mimeType: headerMime || "image/jpeg", normalizedUrl: fileUrl, extension: ext }
-  }
-
-  if (fileUrl.startsWith("data:image/")) {
-    return { isPdf: false, isImage: true, mimeType: "image/jpeg", normalizedUrl: fileUrl, extension: "jpg" }
-  }
-
-  // Final fallback to PDF
-  return { isPdf: true, isImage: false, mimeType: "application/pdf", normalizedUrl: fileUrl, extension: "pdf" }
+  return { isPdf: false, isImage: true, mimeType: imgMime, normalizedUrl: normalized, extension: ext }
 }
 
 export function MedicalDocumentViewerModal({
@@ -167,7 +153,6 @@ export function MedicalDocumentViewerModal({
 
     async function renderPdf() {
       try {
-        // Load PDF.js from CDN dynamically if not on window
         let pdfjs = (window as any).pdfjsLib
         if (!pdfjs) {
           await new Promise<void>((resolve, reject) => {
@@ -193,7 +178,6 @@ export function MedicalDocumentViewerModal({
         if (doc!.fileUrl.startsWith("http")) {
           loadingTask = pdfjs.getDocument({ url: doc!.fileUrl, withCredentials: false })
         } else {
-          // Convert Base64 data to Uint8Array
           let base64 = doc!.fileUrl
           const commaIndex = base64.indexOf(",")
           if (commaIndex !== -1) {
@@ -214,7 +198,6 @@ export function MedicalDocumentViewerModal({
         setNumPages(loadedPdf.numPages)
         setPdfLoading(false)
 
-        // Render current page
         renderPage(loadedPdf, currentPage, zoom, rotation)
       } catch (err: any) {
         console.error("PDF render error:", err)
@@ -232,7 +215,6 @@ export function MedicalDocumentViewerModal({
     }
   }, [doc?.id, doc?.fileUrl, format.isPdf])
 
-  // Re-render PDF page when page, zoom or rotation changes
   useEffect(() => {
     if (format.isPdf && pdfDocRef.current && !pdfLoading) {
       renderPage(pdfDocRef.current, currentPage, zoom, rotation)
@@ -243,7 +225,7 @@ export function MedicalDocumentViewerModal({
     if (!canvasRef.current || !pdf) return
     try {
       const page = await pdf.getPage(pageNum)
-      const scale = Math.max(0.7, currentZoom * 1.5) // Higher DPI for sharp rendering
+      const scale = Math.max(0.7, currentZoom * 1.5)
       const viewport = page.getViewport({ scale, rotation: currentRotation })
 
       const canvas = canvasRef.current
@@ -274,7 +256,7 @@ export function MedicalDocumentViewerModal({
   }
   const handleRotate = () => setRotation(prev => (prev + 90) % 360)
 
-  // Drag / Pan handlers for desktop & touch
+  // Drag / Pan handlers
   const handleMouseDown = (e: React.MouseEvent) => {
     if (zoom <= 1) return
     setIsDragging(true)
@@ -291,7 +273,7 @@ export function MedicalDocumentViewerModal({
 
   const handleMouseUp = () => setIsDragging(false)
 
-  // Robust Download handler
+  // Download handler
   const handleDownload = async () => {
     if (!doc) return
     setDownloading(true)
@@ -304,7 +286,6 @@ export function MedicalDocumentViewerModal({
     const fileName = `${safeTitle}.${format.extension}`
 
     try {
-      // 1. Check for native Capacitor Android / iOS platform
       const { Capacitor } = await import("@capacitor/core")
       if (Capacitor.isNativePlatform()) {
         const { Filesystem, Directory } = await import("@capacitor/filesystem")
@@ -352,7 +333,6 @@ export function MedicalDocumentViewerModal({
       console.warn("Capacitor download fallback to web download:", err)
     }
 
-    // 2. Web Browser direct download
     try {
       if (doc.fileUrl.startsWith("http")) {
         const resp = await fetch(doc.fileUrl)
@@ -366,7 +346,6 @@ export function MedicalDocumentViewerModal({
         document.body.removeChild(a)
         setTimeout(() => URL.revokeObjectURL(blobUrl), 3000)
       } else {
-        // Base64 download
         let blob: Blob
         if (doc.fileUrl.startsWith("data:")) {
           const commaIdx = doc.fileUrl.indexOf(",")
@@ -402,7 +381,7 @@ export function MedicalDocumentViewerModal({
     }
   }
 
-  // Delete handler with confirmation
+  // Delete handler
   const handleDelete = async () => {
     if (!doc || !onDelete) return
     const confirmed = confirm(
@@ -429,7 +408,6 @@ export function MedicalDocumentViewerModal({
       >
         {/* Top Header */}
         <div className="p-3 sm:p-4 bg-slate-900/95 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
-          {/* Title & Metadata */}
           <div className="flex items-center gap-2.5 min-w-0 pr-2">
             <span className="text-2xl shrink-0">{doc.icon || (format.isPdf ? "📄" : "💊")}</span>
             <div className="min-w-0">
@@ -508,7 +486,7 @@ export function MedicalDocumentViewerModal({
               </span>
             </button>
 
-            {/* Delete Button (if provided) */}
+            {/* Delete Button */}
             {onDelete && (
               <button
                 onClick={handleDelete}
@@ -540,7 +518,6 @@ export function MedicalDocumentViewerModal({
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
         >
-          {/* Render PDF vs Image */}
           {format.isPdf ? (
             <div className="w-full h-full flex flex-col items-center justify-center overflow-auto p-4">
               {pdfLoading && (
@@ -593,7 +570,6 @@ export function MedicalDocumentViewerModal({
                 />
               </div>
 
-              {/* PDF Page Navigation Bar */}
               {numPages > 1 && !pdfLoading && !pdfError && (
                 <div className="absolute bottom-4 bg-slate-900/90 border border-slate-700 backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-3 text-xs font-bold text-slate-300 shadow-xl">
                   <button
@@ -615,7 +591,6 @@ export function MedicalDocumentViewerModal({
               )}
             </div>
           ) : (
-            /* Image Viewer with Zoom, Rotate, and Drag */
             <div 
               className="w-full h-full flex items-center justify-center overflow-hidden p-2"
               style={{
