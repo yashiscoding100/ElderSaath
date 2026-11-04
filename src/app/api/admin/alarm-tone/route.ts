@@ -33,11 +33,15 @@ export async function POST(req: Request) {
         select: { id: true }
       })
 
+      const pushToneUrl = updated.toneUrl?.startsWith("/")
+        ? `https://eldersaath.vercel.app${updated.toneUrl}`
+        : (updated.toneUrl || "")
+
       for (const elder of elders) {
         sendPushNotification(elder.id, {
           type: "SYNC_ALARM_TONE",
           customToneEnabled: updated.enabled ? "true" : "false",
-          customToneUrl: updated.toneUrl || "",
+          customToneUrl: pushToneUrl,
           customToneTitle: updated.toneTitle || ""
         }).catch((e) => console.warn(`[admin/alarm-tone] Push warning for elder ${elder.id}:`, e))
       }

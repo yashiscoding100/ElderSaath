@@ -39,10 +39,14 @@ export function AdminAlarmToneCard({ initialConfig }: { initialConfig: AlarmTone
   }, [config.toneUrl])
 
   const toggleAudioPreview = (urlToPlay?: string) => {
-    const targetUrl = urlToPlay || config.toneUrl
+    let targetUrl = urlToPlay || config.toneUrl
     if (!targetUrl) {
       alert("No audio URL available to preview.")
       return
+    }
+
+    if (targetUrl.startsWith("/") && typeof window !== "undefined") {
+      targetUrl = window.location.origin + targetUrl
     }
 
     if (isPlaying) {

@@ -124,9 +124,17 @@ export function MedicationAlarmSync() {
         const toneData = await toneRes.json()
         if (toneData?.config && AlarmSyncPlugin && typeof AlarmSyncPlugin.syncAlarmTone === "function") {
           try {
+            let finalUrl = toneData.config.toneUrl || ""
+            if (finalUrl && finalUrl.startsWith("/")) {
+              const baseOrigin = typeof window !== "undefined" && window.location.origin.startsWith("http")
+                ? window.location.origin
+                : "https://eldersaath.vercel.app"
+              finalUrl = baseOrigin + finalUrl
+            }
+
             await AlarmSyncPlugin.syncAlarmTone({
               enabled: toneData.config.enabled === true,
-              toneUrl: toneData.config.toneUrl || "",
+              toneUrl: finalUrl,
               toneTitle: toneData.config.toneTitle || "Custom Tone"
             })
             console.log(`[MedicationAlarmSync] Alarm tone synced: enabled=${toneData.config.enabled}`)

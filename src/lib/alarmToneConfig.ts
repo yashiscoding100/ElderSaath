@@ -14,25 +14,25 @@ export const PRESET_ALARM_TONES: AlarmTonePreset[] = [
     id: "PRESET_BELLS",
     name: "Gentle Morning Chimes",
     category: "Peaceful",
-    url: "https://actions.google.com/sounds/v1/alarms/beep_short.ogg"
+    url: "/sounds/gentle_morning_chimes.ogg"
   },
   {
     id: "PRESET_MEDITATION",
     name: "Tibetan Singing Bowl",
     category: "Calm",
-    url: "https://actions.google.com/sounds/v1/bell/tibetan_singing_bowl.ogg"
+    url: "/sounds/tibetan_singing_bowl.ogg"
   },
   {
     id: "PRESET_FLUTE",
     name: "Serene Morning Melody",
     category: "Melodic",
-    url: "https://actions.google.com/sounds/v1/alarms/mechanical_clock_ring.ogg"
+    url: "/sounds/mechanical_clock.ogg"
   },
   {
     id: "PRESET_GENTLE_ALARM",
     name: "Classic Digital Gentle Ring",
     category: "Classic",
-    url: "https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg"
+    url: "/sounds/digital_watch.ogg"
   }
 ]
 
@@ -63,10 +63,18 @@ export async function getAlarmToneConfig(): Promise<AlarmToneConfig> {
 
     try {
       const parsed = JSON.parse(notice.content) as Partial<AlarmToneConfig>
+      let toneUrl = parsed.toneUrl || ""
+      const matchedPreset = PRESET_ALARM_TONES.find(p => p.id === parsed.tonePreset)
+      if (matchedPreset) {
+        toneUrl = matchedPreset.url
+      } else if (toneUrl.includes("tibetan_singing_bowl.ogg")) {
+        toneUrl = "/sounds/tibetan_singing_bowl.ogg"
+      }
+
       return {
         enabled: notice.isActive,
         toneTitle: parsed.toneTitle || (notice.isActive ? "Custom Alarm Tone" : "Phone System Default Alarm"),
-        toneUrl: parsed.toneUrl || "",
+        toneUrl,
         tonePreset: parsed.tonePreset || "CUSTOM_UPLOAD",
         updatedAt: notice.createdAt.toISOString()
       }

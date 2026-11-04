@@ -132,26 +132,32 @@ public class AlarmSyncPlugin extends Plugin {
                             fos.close();
                             Log.i("AlarmSyncPlugin", "Cached base64 custom alarm tone: " + targetFile.length() + " bytes");
                         }
-                    } else if (toneUrl.startsWith("http")) {
-                        URL url = new URL(toneUrl);
-                        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                        conn.setConnectTimeout(10000);
-                        conn.setReadTimeout(15000);
-                        conn.connect();
-                        if (conn.getResponseCode() >= 200 && conn.getResponseCode() < 300) {
-                            InputStream is = conn.getInputStream();
-                            FileOutputStream fos = new FileOutputStream(targetFile);
-                            byte[] buffer = new byte[4096];
-                            int read;
-                            while ((read = is.read(buffer)) != -1) {
-                                fos.write(buffer, 0, read);
-                            }
-                            fos.flush();
-                            fos.close();
-                            is.close();
-                            Log.i("AlarmSyncPlugin", "Cached remote custom alarm tone: " + targetFile.length() + " bytes");
+                    } else {
+                        String fullUrl = toneUrl.trim();
+                        if (fullUrl.startsWith("/")) {
+                            fullUrl = "https://eldersaath.vercel.app" + fullUrl;
                         }
-                        conn.disconnect();
+                        if (fullUrl.startsWith("http")) {
+                            URL url = new URL(fullUrl);
+                            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                            conn.setConnectTimeout(10000);
+                            conn.setReadTimeout(15000);
+                            conn.connect();
+                            if (conn.getResponseCode() >= 200 && conn.getResponseCode() < 300) {
+                                InputStream is = conn.getInputStream();
+                                FileOutputStream fos = new FileOutputStream(targetFile);
+                                byte[] buffer = new byte[4096];
+                                int read;
+                                while ((read = is.read(buffer)) != -1) {
+                                    fos.write(buffer, 0, read);
+                                }
+                                fos.flush();
+                                fos.close();
+                                is.close();
+                                Log.i("AlarmSyncPlugin", "Cached remote custom alarm tone: " + targetFile.length() + " bytes");
+                            }
+                            conn.disconnect();
+                        }
                     }
                 } catch (Exception e) {
                     Log.w("AlarmSyncPlugin", "Failed to cache custom alarm tone: " + e.getMessage());
