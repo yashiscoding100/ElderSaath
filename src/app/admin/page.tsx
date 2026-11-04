@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma"
-import { DatabaseCleanupCard } from "./DatabaseCleanupCard"
+import { AdminDatabaseStorageMeter } from "./AdminDatabaseStorageMeter"
+import { getDatabaseStorageStats } from "@/lib/databaseStorage"
 import { AdminDemoToggleCard } from "./AdminDemoToggleCard"
 import { isDemoEnabled, ensureDemoAccountsExist } from "@/lib/demoConfig"
 import { getStartupPopupConfig } from "@/lib/startupPopup"
@@ -18,6 +19,7 @@ export default async function AdminDashboard() {
   let demoEnabled = true
   let startupConfig = await getStartupPopupConfig()
   let alarmToneConfig = await getAlarmToneConfig()
+  let storageStats = await getDatabaseStorageStats()
 
   try {
     // Ensure demo accounts exist and are linked
@@ -69,6 +71,13 @@ export default async function AdminDashboard() {
         </div>
       </div>
 
+      {/* Database Storage Analytics, Meter & Purge Tools */}
+      <AdminDatabaseStorageMeter 
+        initialStats={storageStats}
+        documentCount={documentCount} 
+        notificationCount={notificationCount} 
+      />
+
       {/* Global Custom Alarm Tone Controls */}
       <AdminAlarmToneCard initialConfig={alarmToneConfig} />
 
@@ -77,11 +86,6 @@ export default async function AdminDashboard() {
 
       {/* Demo Mode Toggle */}
       <AdminDemoToggleCard initialEnabled={demoEnabled} />
-
-      <DatabaseCleanupCard 
-        documentCount={documentCount} 
-        notificationCount={notificationCount} 
-      />
 
       <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
         <h3 className="text-xl font-bold text-slate-900 mb-4">System Status</h3>

@@ -12,8 +12,8 @@ export async function uploadDocument(base64Data: string, filename: string): Prom
       const { url } = await put(filename, buffer, { access: 'public' })
       return url
     } catch (e) {
-      console.error("Blob upload failed:", e)
-      throw new Error("Failed to upload to Vercel Blob.")
+      console.warn("Blob upload failed, falling back to direct database base64 storage:", e)
+      return base64Data
     }
   }
 

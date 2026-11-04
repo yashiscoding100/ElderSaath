@@ -11,32 +11,47 @@ export async function POST(req: Request) {
   try {
     const { elderId, title, fileType, fileData } = await req.json()
 
+    if (!fileData) {
+      return NextResponse.json({ message: "No document file data received." }, { status: 400 })
+    }
+
+    const targetElderId = session.user.role === "ELDER" ? session.user.id : elderId
+    if (!targetElderId) {
+      return NextResponse.json({ message: "Missing target elder ID" }, { status: 400 })
+    }
+
     // Authorization Check
     if (session.user.role === "CHILD") {
       const relationship = await prisma.caregiverRelationship.findUnique({
-        where: { elderId_childId: { elderId, childId: session.user.id } }
+        where: { elderId_childId: { elderId: targetElderId, childId: session.user.id } }
       })
-      if (!relationship || relationship.status !== "ACTIVE") return NextResponse.json({ message: "Unauthorized" }, { status: 403 })
-    } else if (session.user.role === "ELDER" && session.user.id !== elderId) {
+      if (!relationship || relationship.status !== "ACTIVE") {
+        return NextResponse.json({ message: "Unauthorized for this elder" }, { status: 403 })
+      }
+    } else if (session.user.role === "ELDER" && session.user.id !== targetElderId) {
       return NextResponse.json({ message: "Forbidden" }, { status: 403 })
     }
 
-    const safeFilename = `${elderId}-${Date.now()}`
+    const safeFilename = `prescription-${targetElderId}-${Date.now()}`
     const fileUrl = await uploadDocument(fileData, safeFilename)
+
+    const fallbackDate = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    const finalTitle = (title && title.trim()) ? title.trim() : `Prescription - ${fallbackDate}`
 
     const document = await prisma.medicalDocument.create({
       data: {
-        elderId,
+        elderId: targetElderId,
         uploaderId: session.user.id,
-        title,
-        fileType,
+        title: finalTitle,
+        fileType: fileType || "image/jpeg",
         fileUrl
       }
     })
     
     return NextResponse.json(document, { status: 201 })
-  } catch (error) {
-    return NextResponse.json({ message: "Failed to upload document" }, { status: 500 })
+  } catch (error: any) {
+    console.error("[api/documents POST] Error:", error)
+    return NextResponse.json({ message: "Failed to upload document: " + (error?.message || "Unknown server error") }, { status: 500 })
   }
 }
 
@@ -104,7 +119,8 @@ export async function DELETE(req: Request) {
     })
 
     return NextResponse.json({ message: "Deleted successfully" }, { status: 200 })
-  } catch (error) {
-    return NextResponse.json({ message: "Failed to delete document" }, { status: 500 })
+  } catch (error: any) {
+    console.error("[api/documents DELETE] Error:", error)
+    return NextResponse.json({ message: "Failed to delete document: " + (error?.message || "") }, { status: 500 })
   }
 }
