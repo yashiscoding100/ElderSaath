@@ -189,7 +189,7 @@ export function AdminAlarmToneCard({ initialConfig }: { initialConfig: AlarmTone
                 </span>
               </div>
               <p className="text-sm text-slate-500 mt-1 max-w-xl">
-                Choose whether all elders hear a custom uploaded melody or their phone&apos;s native system default alarm tone.
+                Choose whether all user devices hear a custom uploaded melody or their phone&apos;s native system default alarm tone.
               </p>
             </div>
           </div>
@@ -417,7 +417,7 @@ export function AdminAlarmToneCard({ initialConfig }: { initialConfig: AlarmTone
         {/* Footer Actions */}
         <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
           <p className="text-xs text-slate-500">
-            Changes take effect across all elders&apos; devices upon the next synchronization.
+            Changes take effect across all devices (all users) upon the next synchronization.
           </p>
 
           <button
