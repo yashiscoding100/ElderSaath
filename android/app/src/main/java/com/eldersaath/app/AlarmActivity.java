@@ -201,7 +201,7 @@ public class AlarmActivity extends Activity {
         }
         snoozeBtn.setText(displaySnooze);
 
-        // Immediate responsive click and touch handling for Samsung lockscreen wakeup
+        // Immediate responsive click handling for lockscreen wakeup
         View.OnClickListener stopClickListener = new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -217,16 +217,6 @@ public class AlarmActivity extends Activity {
             }
         };
         stopBtn.setOnClickListener(stopClickListener);
-        stopBtn.setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                if (event.getAction() == MotionEvent.ACTION_UP) {
-                    v.performClick();
-                    return true;
-                }
-                return false;
-            }
-        });
 
         final String finalActionText = actionText;
         final String finalLabel = label;
@@ -237,14 +227,22 @@ public class AlarmActivity extends Activity {
             @Override
             public void onClick(View v) {
                 stopAlarmAndSound();
+
+                // Notify caregiver server in background that snooze was pressed
+                notifySnoozeToServer(AlarmActivity.this, finalElderId);
                 
-                Intent snoozeIntent = new Intent(AlarmActivity.this, AlarmActivity.class);
+                // Route snooze alarm through LocalAlarmReceiver using setAlarmClock
+                // This pierces MIUI / HyperOS battery optimizations and bypasses Android 10+ background activity launch restrictions
+                Intent snoozeIntent = new Intent(AlarmActivity.this, LocalAlarmReceiver.class);
+                snoozeIntent.setAction(LocalAlarmReceiver.ACTION_SNOOZE_ALARM);
+                snoozeIntent.putExtra("isSnooze", true);
                 snoozeIntent.putExtra("actionText", finalActionText);
                 snoozeIntent.putExtra("label", finalLabel);
                 snoozeIntent.putExtra("body", finalBody);
                 snoozeIntent.putExtra("snoozeText", finalSnoozeText);
                 snoozeIntent.putExtra("snoozeDuration", snoozeDuration);
                 snoozeIntent.putExtra("medicationId", finalMedicationId);
+                snoozeIntent.putExtra("name", finalLabel);
                 snoozeIntent.putExtra("type", finalAlarmType);
                 if (finalElderId != null) snoozeIntent.putExtra("elderId", finalElderId);
                 
@@ -252,12 +250,19 @@ public class AlarmActivity extends Activity {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) flags |= PendingIntent.FLAG_IMMUTABLE;
 
                 int reqCode = (int) (System.currentTimeMillis() % 100000);
-                PendingIntent pi = PendingIntent.getActivity(AlarmActivity.this, reqCode, snoozeIntent, flags);
+                PendingIntent pi = PendingIntent.getBroadcast(AlarmActivity.this, reqCode, snoozeIntent, flags);
+
+                Intent showIntent = new Intent(AlarmActivity.this, MainActivity.class);
+                PendingIntent showPi = PendingIntent.getActivity(AlarmActivity.this, reqCode, showIntent, flags);
+
                 AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
                 long triggerAt = System.currentTimeMillis() + (snoozeDuration * 60 * 1000L);
 
                 if (am != null) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        AlarmManager.AlarmClockInfo clockInfo = new AlarmManager.AlarmClockInfo(triggerAt, showPi);
+                        am.setAlarmClock(clockInfo, pi);
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                         am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi);
                     } else {
                         am.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pi);
@@ -269,16 +274,6 @@ public class AlarmActivity extends Activity {
             }
         };
         snoozeBtn.setOnClickListener(snoozeClickListener);
-        snoozeBtn.setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                if (event.getAction() == MotionEvent.ACTION_UP) {
-                    v.performClick();
-                    return true;
-                }
-                return false;
-            }
-        });
 
         // 5. Start Single Continuous Sound and Aggressive Vibration
         startAlarmSoundAndVibration();
@@ -352,6 +347,56 @@ public class AlarmActivity extends Activity {
                     }
                 } catch (Exception e) {
                     Log.w("ALARM_DEBUG", "Network log call failed (will be synced when app opens / comes online): " + e.getMessage());
+                } finally {
+                    if (conn != null) conn.disconnect();
+                }
+            }
+        }).start();
+    }
+
+    /**
+     * Notifies caregiver server asynchronously that the elder snoozed their alarm.
+     */
+    public static void notifySnoozeToServer(final Context context, final String elderId) {
+        if (elderId == null || elderId.trim().isEmpty()) {
+            Log.d("ALARM_DEBUG", "No elderId provided for snooze notification, skipping.");
+            return;
+        }
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                HttpURLConnection conn = null;
+                try {
+                    URL url = new URL("https://eldersaath.vercel.app/api/alarms/snooze");
+                    conn = (HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                    conn.setRequestProperty("x-app-alarm-secret", "ElderSaath-Hardware-Alarm-v1");
+                    
+                    try {
+                        String cookie = CookieManager.getInstance().getCookie("https://eldersaath.vercel.app");
+                        if (cookie != null && !cookie.isEmpty()) {
+                            conn.setRequestProperty("Cookie", cookie);
+                        }
+                    } catch (Exception ignored) {}
+
+                    conn.setConnectTimeout(8000);
+                    conn.setReadTimeout(8000);
+                    conn.setDoOutput(true);
+
+                    JSONObject payload = new JSONObject();
+                    payload.put("elderId", elderId);
+
+                    OutputStream os = conn.getOutputStream();
+                    os.write(payload.toString().getBytes(StandardCharsets.UTF_8));
+                    os.flush();
+                    os.close();
+
+                    int code = conn.getResponseCode();
+                    Log.i("ALARM_DEBUG", "Snooze notified to server! HTTP Response: " + code);
+                } catch (Exception e) {
+                    Log.w("ALARM_DEBUG", "Server snooze notification failed: " + e.getMessage());
                 } finally {
                     if (conn != null) conn.disconnect();
                 }

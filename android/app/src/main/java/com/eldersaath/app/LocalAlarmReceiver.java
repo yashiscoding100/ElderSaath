@@ -36,7 +36,8 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
             return;
         }
 
-        Log.e(TAG, ">>> HARDWARE ALARM TRIGGERED! Waking device...");
+        boolean isSnooze = intent.getBooleanExtra("isSnooze", false) || ACTION_SNOOZE_ALARM.equals(action);
+        Log.e(TAG, ">>> HARDWARE ALARM TRIGGERED! (isSnooze=" + isSnooze + ") Waking device...");
 
         String medicationId = intent.getStringExtra("medicationId");
         String name = intent.getStringExtra("name");
@@ -49,14 +50,16 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
         String label = intent.getStringExtra("label");
         String body = intent.getStringExtra("body");
         String actionText = intent.getStringExtra("actionText");
+        String snoozeText = intent.getStringExtra("snoozeText");
+        int snoozeDuration = intent.getIntExtra("snoozeDuration", 10);
 
-        // 2. Prevent duplicate alarm storm with FCM cloud push
+        // 2. Prevent duplicate alarm storm with FCM cloud push (only for initial alarms, not user snoozes)
         SharedPreferences prefs = context.getSharedPreferences("ElderSaathAlarms", Context.MODE_PRIVATE);
         long lastFired = prefs.getLong("last_alarm_fired_timestamp", 0);
         String lastMed = prefs.getString("last_alarm_fired_med_id", "");
         long now = System.currentTimeMillis();
 
-        if (medicationId != null && medicationId.equals(lastMed) && (now - lastFired) < 45000) {
+        if (!isSnooze && medicationId != null && medicationId.equals(lastMed) && (now - lastFired) < 45000) {
             Log.w(TAG, "Duplicate alarm suppressed (already fired " + (now - lastFired) + "ms ago)");
             return;
         }
@@ -86,6 +89,10 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
             actionText = "TASK".equalsIgnoreCase(type) ? "COMPLETE TASK / STOP ALARM" : "TAKE MEDICINE / STOP ALARM";
         }
 
+        if (snoozeText == null || snoozeText.isEmpty()) {
+            snoozeText = "TASK".equalsIgnoreCase(type) ? "Do task later" : "Take later";
+        }
+
         // 3. Force CPU and Screen awake immediately
         PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
         if (pm != null) {
@@ -100,11 +107,13 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
             }
         }
 
-        // 4. Queue up next occurrence
-        try {
-            AlarmScheduler.scheduleNextOccurrence(context, medicationId, name, dosage, time, frequency, instructions, elderId, type, label, body, actionText);
-        } catch (Exception e) {
-            Log.e(TAG, "Error scheduling next occurrence", e);
+        // 4. Queue up next occurrence ONLY for recurring daily alarms (NOT for snoozed occurrences)
+        if (!isSnooze) {
+            try {
+                AlarmScheduler.scheduleNextOccurrence(context, medicationId, name, dosage, time, frequency, instructions, elderId, type, label, body, actionText);
+            } catch (Exception e) {
+                Log.e(TAG, "Error scheduling next occurrence", e);
+            }
         }
 
         // 5. Prepare AlarmActivity intent
@@ -117,11 +126,12 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
         alarmIntent.putExtra("label", label);
         alarmIntent.putExtra("body", body);
         alarmIntent.putExtra("actionText", actionText);
-        alarmIntent.putExtra("snoozeText", "TASK".equalsIgnoreCase(type) ? "Do task later" : "Take later");
-        alarmIntent.putExtra("snoozeDuration", 10);
+        alarmIntent.putExtra("snoozeText", snoozeText);
+        alarmIntent.putExtra("snoozeDuration", snoozeDuration);
         alarmIntent.putExtra("elderId", elderId);
         alarmIntent.putExtra("medicationId", medicationId);
         alarmIntent.putExtra("type", type);
+        alarmIntent.putExtra("isSnooze", isSnooze);
         alarmIntent.putExtra("stickyNotification", true);
 
         // 6. Notification Channel: SILENT sound on channel so AlarmActivity MediaPlayer is the SINGLE voice!
@@ -169,9 +179,11 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
             PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0)
         );
 
+        String notifTitle = (isSnooze ? "⏰ [Snoozed Reminder] " : "⏰ Time for ") + name;
+
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-            .setContentTitle("⏰ Time for " + name)
+            .setContentTitle(notifTitle)
             .setContentText("Dosage: " + dosage)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
