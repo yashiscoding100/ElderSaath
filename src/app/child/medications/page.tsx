@@ -3,6 +3,7 @@ import { MedicineRow } from "./MedicineRow"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { getActiveElder } from "@/lib/activeElder"
+import { resolveCompactNoticeAudioUrl } from "@/lib/alarmSync"
 import { redirect } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
@@ -25,10 +26,18 @@ export default async function ChildMedications() {
     )
   }
 
-  const medications = await prisma.medication.findMany({
+  const rawMedications = await prisma.medication.findMany({
     where: { elderId: relationship.elderId },
     orderBy: { createdAt: "desc" }
   })
+
+  // Keep RSC payload lightweight by serving stored audio via API URL
+  const medications = rawMedications.map(m => ({
+    ...m,
+    specialNoticeAudioUrl: m.specialNoticeAudioUrl
+      ? resolveCompactNoticeAudioUrl(m.id, m.specialNoticeAudioUrl, m.specialNoticeVersion, false) || null
+      : null
+  }))
 
   return (
     <div className="space-y-6">

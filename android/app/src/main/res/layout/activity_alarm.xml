@@ -15,111 +15,252 @@
         android:descendantFocusability="beforeDescendants"
         android:paddingStart="24dp"
         android:paddingEnd="24dp"
-        android:paddingTop="48dp"
-        android:paddingBottom="48dp">
+        android:paddingTop="40dp"
+        android:paddingBottom="40dp">
 
-        <!-- Top Status Badge -->
-        <TextView
-            android:id="@+id/tvAlarmBadge"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="⏰ ELDERSAATH ALARM"
-            android:textColor="#38BDF8"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.08"
-            android:gravity="center"
-            android:layout_marginBottom="16dp" />
-
-        <!-- Alarm Icon Graphic -->
-        <TextView
-            android:id="@+id/tvAlarmIcon"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="🚨"
-            android:textSize="56sp"
-            android:gravity="center"
-            android:layout_marginBottom="20dp" />
-
-        <!-- Title / Medicine Name -->
-        <TextView
-            android:id="@+id/tvAlarmTitle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Time for Medicine"
-            android:textColor="#FFFFFF"
-            android:textSize="26sp"
-            android:textStyle="bold"
-            android:gravity="center"
-            android:layout_marginBottom="12dp" />
-
-        <!-- Body / Dosage Details -->
-        <TextView
-            android:id="@+id/tvAlarmBody"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Please take your scheduled medication."
-            android:textColor="#E2E8F0"
-            android:textSize="17sp"
-            android:gravity="center"
-            android:lineSpacingExtra="3dp"
-            android:layout_marginBottom="36dp" />
-
-        <!-- Action Buttons Container -->
+        <!-- NORMAL ALARM RINGING VIEW -->
         <LinearLayout
+            android:id="@+id/layoutAlarmControls"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:gravity="center">
 
-            <!-- Primary STOP / TAKE MEDICINE Button -->
+            <!-- Top Status Badge -->
+            <TextView
+                android:id="@+id/tvAlarmBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="⏰ ELDERSAATH ALARM"
+                android:textColor="#38BDF8"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.08"
+                android:gravity="center"
+                android:layout_marginBottom="16dp" />
+
+            <!-- Alarm Icon Graphic -->
+            <TextView
+                android:id="@+id/tvAlarmIcon"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🚨"
+                android:textSize="56sp"
+                android:gravity="center"
+                android:layout_marginBottom="20dp" />
+
+            <!-- Title / Medicine Name -->
+            <TextView
+                android:id="@+id/tvAlarmTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Time for Medicine"
+                android:textColor="#FFFFFF"
+                android:textSize="26sp"
+                android:textStyle="bold"
+                android:gravity="center"
+                android:layout_marginBottom="12dp" />
+
+            <!-- Body / Dosage Details -->
+            <TextView
+                android:id="@+id/tvAlarmBody"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Please take your scheduled medication."
+                android:textColor="#E2E8F0"
+                android:textSize="17sp"
+                android:gravity="center"
+                android:lineSpacingExtra="3dp"
+                android:layout_marginBottom="36dp" />
+
+            <!-- Action Buttons Container -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <!-- Primary STOP / TAKE MEDICINE Button -->
+                <Button
+                    android:id="@+id/btnStopAlarm"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="64dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:stateListAnimator="@null"
+                    android:text="TAKE MEDICINE / STOP ALARM"
+                    android:textColor="#FFFFFF"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:background="@drawable/bg_alarm_stop_btn"
+                    android:paddingTop="16dp"
+                    android:paddingBottom="16dp"
+                    android:layout_marginBottom="16dp"
+                    android:elevation="6dp" />
+
+                <!-- Secondary SNOOZE Button -->
+                <Button
+                    android:id="@+id/btnSnoozeAlarm"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="56dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:stateListAnimator="@null"
+                    android:text="I'LL TAKE MEDICINES LATER (10M)"
+                    android:textColor="#F1F5F9"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:background="@drawable/bg_alarm_snooze_btn"
+                    android:paddingTop="15dp"
+                    android:paddingBottom="15dp"
+                    android:elevation="3dp" />
+
+                <!-- Auto-Snooze Live Countdown Indicator (Visible only when Admin enables Auto-Snooze for account) -->
+                <TextView
+                    android:id="@+id/tvAutoSnoozeStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:visibility="gone"
+                    android:text="⏱️ Auto-snoozing in 60s if no response..."
+                    android:textColor="#CBD5E1"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:gravity="center"
+                    android:layout_marginTop="16dp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- POST-ALARM SPECIAL NOTICE VIEW (Shown after pressing Take Medicine) -->
+        <LinearLayout
+            android:id="@+id/layoutSpecialNotice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/tvSpecialNoticeCounter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="📢 SPECIAL NOTICE • 1 OF 5"
+                android:textColor="#FBBF24"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.08"
+                android:gravity="center"
+                android:layout_marginBottom="12dp" />
+
+            <TextView
+                android:id="@+id/tvSpecialNoticeTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="⚠️ IMPORTANT MEDICINE NOTE"
+                android:textColor="#FFFFFF"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:gravity="center"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:id="@+id/tvSpecialNoticeMed"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Medicine Name"
+                android:textColor="#93C5FD"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:gravity="center"
+                android:layout_marginBottom="24dp" />
+
+            <!-- Highlighted Notice Content Card -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_special_notice_card"
+                android:padding="22dp"
+                android:layout_marginBottom="28dp">
+
+                <!-- TEXT NOTICE CONTAINER -->
+                <LinearLayout
+                    android:id="@+id/layoutNoticeTextBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/tvSpecialNoticeText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text=""
+                        android:textColor="#FEF3C7"
+                        android:textSize="20sp"
+                        android:textStyle="bold"
+                        android:lineSpacingExtra="6dp"
+                        android:gravity="center" />
+                </LinearLayout>
+
+                <!-- VOICE NOTICE CONTAINER -->
+                <LinearLayout
+                    android:id="@+id/layoutNoticeVoiceBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="🔊"
+                        android:textSize="48sp"
+                        android:layout_marginBottom="10dp" />
+
+                    <TextView
+                        android:id="@+id/tvSpecialNoticeVoiceStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Playing voice notice from your family..."
+                        android:textColor="#FEF3C7"
+                        android:textSize="17sp"
+                        android:textStyle="bold"
+                        android:gravity="center"
+                        android:layout_marginBottom="18dp" />
+
+                    <Button
+                        android:id="@+id/btnReplaySpecialNotice"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="52dp"
+                        android:text="🔊 REPLAY VOICE NOTICE"
+                        android:textColor="#F1F5F9"
+                        android:textSize="15sp"
+                        android:textStyle="bold"
+                        android:background="@drawable/bg_alarm_snooze_btn"
+                        android:paddingTop="12dp"
+                        android:paddingBottom="12dp" />
+                </LinearLayout>
+            </LinearLayout>
+
             <Button
-                android:id="@+id/btnStopAlarm"
+                android:id="@+id/btnCloseSpecialNotice"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:minHeight="64dp"
                 android:clickable="true"
                 android:focusable="true"
                 android:stateListAnimator="@null"
-                android:text="TAKE MEDICINE / STOP ALARM"
+                android:text="✓ OK, I UNDERSTAND — CLOSE"
                 android:textColor="#FFFFFF"
                 android:textSize="18sp"
                 android:textStyle="bold"
                 android:background="@drawable/bg_alarm_stop_btn"
                 android:paddingTop="16dp"
                 android:paddingBottom="16dp"
-                android:layout_marginBottom="16dp"
                 android:elevation="6dp" />
-
-            <!-- Secondary SNOOZE Button -->
-            <Button
-                android:id="@+id/btnSnoozeAlarm"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="56dp"
-                android:clickable="true"
-                android:focusable="true"
-                android:stateListAnimator="@null"
-                android:text="I'LL TAKE MEDICINES LATER (10M)"
-                android:textColor="#F1F5F9"
-                android:textSize="15sp"
-                android:textStyle="bold"
-                android:background="@drawable/bg_alarm_snooze_btn"
-                android:paddingTop="15dp"
-                android:paddingBottom="15dp"
-                android:elevation="3dp" />
-
-            <!-- Auto-Snooze Live Countdown Indicator (Visible only when Admin enables Auto-Snooze for account) -->
-            <TextView
-                android:id="@+id/tvAutoSnoozeStatus"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:visibility="gone"
-                android:text="⏱️ Auto-snoozing in 60s if no response..."
-                android:textColor="#CBD5E1"
-                android:textSize="13sp"
-                android:textStyle="bold"
-                android:gravity="center"
-                android:layout_marginTop="16dp" />
         </LinearLayout>
 
     </LinearLayout>

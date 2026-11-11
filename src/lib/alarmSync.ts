@@ -13,6 +13,27 @@ export interface UnifiedAlarmItem {
   label: string
   body: string
   actionText: string
+  specialNoticeEnabled?: boolean
+  specialNoticeType?: "TEXT" | "VOICE"
+  specialNoticeText?: string
+  specialNoticeAudioUrl?: string
+  specialNoticeMaxCount?: number
+  specialNoticeShownCount?: number
+  specialNoticeVersion?: string
+}
+
+export function resolveCompactNoticeAudioUrl(
+  medId: string,
+  audioUrl: string | null | undefined,
+  version: string | null | undefined,
+  absolute: boolean = true
+): string | undefined {
+  if (!audioUrl) return undefined
+  if (audioUrl.startsWith("http") && !audioUrl.includes("/api/medications/notice-audio") && audioUrl.length <= 280) {
+    return audioUrl
+  }
+  const path = `/api/medications/notice-audio?id=${medId}&v=${encodeURIComponent(version || "1")}`
+  return absolute ? `https://eldersaath.vercel.app${path}` : path
 }
 
 export async function getUnifiedElderAlarms(elderId: string): Promise<UnifiedAlarmItem[]> {
@@ -33,19 +54,41 @@ export async function getUnifiedElderAlarms(elderId: string): Promise<UnifiedAla
     ])
 
     const items: UnifiedAlarmItem[] = [
-      ...meds.map(m => ({
-        id: m.id,
-        name: m.name,
-        dosage: m.dosage || "",
-        time: m.time,
-        frequency: m.frequency || "daily",
-        instructions: m.instructions || "",
-        elderId: m.elderId,
-        type: "MEDICATION" as const,
-        label: `Time for ${m.name}`,
-        body: `Dosage: ${m.dosage || "Scheduled Dose"}${m.instructions ? ". " + m.instructions : ""}`,
-        actionText: "TAKE MEDICINE / STOP ALARM"
-      })),
+      ...meds.map(m => {
+        const base: UnifiedAlarmItem = {
+          id: m.id,
+          name: m.name,
+          dosage: m.dosage || "",
+          time: m.time,
+          frequency: m.frequency || "daily",
+          instructions: m.instructions || "",
+          elderId: m.elderId,
+          type: "MEDICATION" as const,
+          label: `Time for ${m.name}`,
+          body: `Dosage: ${m.dosage || "Scheduled Dose"}${m.instructions ? ". " + m.instructions : ""}`,
+          actionText: "TAKE MEDICINE / STOP ALARM"
+        }
+
+        if (m.specialNoticeEnabled) {
+          base.specialNoticeEnabled = true
+          base.specialNoticeType = m.specialNoticeType === "VOICE" ? "VOICE" : "TEXT"
+          base.specialNoticeText = m.specialNoticeText || ""
+          base.specialNoticeMaxCount = Math.max(1, m.specialNoticeMaxCount || 5)
+          base.specialNoticeShownCount = Math.max(0, m.specialNoticeShownCount || 0)
+          base.specialNoticeVersion = m.specialNoticeVersion || "1"
+          if (base.specialNoticeType === "VOICE") {
+            const compactAudio = resolveCompactNoticeAudioUrl(
+              m.id,
+              m.specialNoticeAudioUrl,
+              base.specialNoticeVersion,
+              true
+            )
+            if (compactAudio) base.specialNoticeAudioUrl = compactAudio
+          }
+        }
+
+        return base
+      }),
       ...tasks
         .filter(t => t.time && t.time.trim().length > 0)
         .map(t => ({
@@ -122,10 +165,22 @@ export async function sendSilentAlarmSchedulePush(elderId: string) {
       getUnifiedElderAlarms(elderId),
       getElderAlarmSettings(elderId)
     ])
+
+    let medicationsJson = JSON.stringify(items)
+    // Respect FCM 4096-byte UTF-8 data payload limit if many medications have very long notice texts
+    if (Buffer.byteLength(medicationsJson, "utf8") > 3200) {
+      const compactItems = items.map(it =>
+        it.specialNoticeText && it.specialNoticeText.length > 80
+          ? { ...it, specialNoticeText: it.specialNoticeText.slice(0, 80) + "..." }
+          : it
+      )
+      medicationsJson = JSON.stringify(compactItems)
+    }
+
     await sendPushNotification(elderId, {
       type: "SYNC_MEDICATIONS",
       elderId,
-      medications: JSON.stringify(items),
+      medications: medicationsJson,
       alarmSnoozeText: String(settings.alarmSnoozeText),
       alarmSnoozeDuration: String(settings.alarmSnoozeDuration),
       autoSnoozeEnabled: String(settings.autoSnoozeEnabled),

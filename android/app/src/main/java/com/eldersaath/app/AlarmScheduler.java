@@ -6,13 +6,21 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
+import android.util.Base64;
 import android.util.Log;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.Calendar;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -123,6 +131,7 @@ public class AlarmScheduler {
             JSONArray arr = new JSONArray(medicationsJson);
             Set<String> scheduledIds = new HashSet<>();
             AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+            SharedPreferences.Editor snEditor = prefs.edit();
 
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject obj = arr.getJSONObject(i);
@@ -138,6 +147,20 @@ public class AlarmScheduler {
                 String body = obj.optString("body", "");
                 String actionText = obj.optString("actionText", "TASK".equalsIgnoreCase(type) ? "COMPLETE TASK / STOP ALARM" : "TAKE MEDICINE / STOP ALARM");
 
+                // Reconcile per-medication special notice counter in phone memory
+                if (id != null && !id.isEmpty() && obj.optBoolean("specialNoticeEnabled", false)) {
+                    String ver = obj.optString("specialNoticeVersion", "1");
+                    int serverShown = Math.max(0, obj.optInt("specialNoticeShownCount", 0));
+                    String storedVer = prefs.getString("sn_ver_" + id, null);
+                    if (storedVer == null || !storedVer.equals(ver)) {
+                        snEditor.putString("sn_ver_" + id, ver);
+                        snEditor.putInt("sn_count_" + id, serverShown);
+                    } else {
+                        int localCount = prefs.getInt("sn_count_" + id, 0);
+                        snEditor.putInt("sn_count_" + id, Math.max(localCount, serverShown));
+                    }
+                }
+
                 if (id == null || id.isEmpty() || time == null || time.isEmpty()) continue;
 
                 long triggerMs = calculateNextTriggerTime(time, frequency);
@@ -147,8 +170,11 @@ public class AlarmScheduler {
                 scheduledIds.add(id);
             }
 
-            prefs.edit().putStringSet(KEY_SCHEDULED_IDS, scheduledIds).apply();
+            snEditor.putStringSet(KEY_SCHEDULED_IDS, scheduledIds).apply();
             Log.i(TAG, "Hardware alarms synced successfully! Total scheduled (meds & tasks): " + scheduledIds.size());
+
+            // Asynchronously cache any Special Notice voice audio files into phone storage for 100% offline playback
+            cacheSpecialNoticeAudioFiles(context.getApplicationContext(), arr);
         } catch (Exception e) {
             Log.e(TAG, "Error parsing and scheduling alarms", e);
         }
@@ -265,6 +291,219 @@ public class AlarmScheduler {
         if (context == null) return "[]";
         SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
         return prefs.getString(KEY_SAVED_MEDS, "[]");
+    }
+
+    /**
+     * Finds a medication object in phone-memory cached schedule by ID or fallback label match.
+     */
+    public static JSONObject getMedicationFromCache(Context context, String medicationId, String fallbackLabel) {
+        if (context == null) return null;
+        try {
+            String saved = getSavedMedications(context);
+            if (saved == null || saved.trim().isEmpty()) return null;
+            JSONArray arr = new JSONArray(saved);
+            if (medicationId != null && !medicationId.trim().isEmpty()) {
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject obj = arr.getJSONObject(i);
+                    if (medicationId.equals(obj.optString("id"))) {
+                        return obj;
+                    }
+                }
+            }
+            if (fallbackLabel != null && !fallbackLabel.trim().isEmpty()) {
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject obj = arr.getJSONObject(i);
+                    String name = obj.optString("name", "");
+                    if (!name.isEmpty() && fallbackLabel.contains(name)) {
+                        return obj;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "getMedicationFromCache warning", e);
+        }
+        return null;
+    }
+
+    /**
+     * Gets how many times the special notice has already been shown for this medication & version.
+     */
+    public static int getSpecialNoticeShownCount(Context context, String medId, String version, int serverCount) {
+        if (context == null || medId == null || medId.trim().isEmpty()) return Math.max(0, serverCount);
+        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        String ver = (version != null && !version.trim().isEmpty()) ? version.trim() : "1";
+        String storedVer = prefs.getString("sn_ver_" + medId, null);
+        if (storedVer == null || !storedVer.equals(ver)) {
+            return Math.max(0, serverCount);
+        }
+        int localCount = prefs.getInt("sn_count_" + medId, 0);
+        return Math.max(localCount, Math.max(0, serverCount));
+    }
+
+    /**
+     * Records one more post-alarm special notice display in phone memory and queues server sync.
+     */
+    public static int incrementSpecialNoticeShownCount(Context context, String medId, String version, int currentKnownCount) {
+        int nextCount = Math.max(1, currentKnownCount + 1);
+        if (context == null || medId == null || medId.trim().isEmpty()) return nextCount;
+
+        String ver = (version != null && !version.trim().isEmpty()) ? version.trim() : "1";
+        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+
+        Set<String> pending = new HashSet<>(prefs.getStringSet("pending_special_notice_sync", new HashSet<String>()));
+        String prefix = medId + "|" + ver + "|";
+        Set<String> cleaned = new HashSet<>();
+        for (String entry : pending) {
+            if (!entry.startsWith(prefix)) {
+                cleaned.add(entry);
+            }
+        }
+        cleaned.add(prefix + nextCount);
+
+        prefs.edit()
+            .putString("sn_ver_" + medId, ver)
+            .putInt("sn_count_" + medId, nextCount)
+            .putStringSet("pending_special_notice_sync", cleaned)
+            .apply();
+
+        Log.i(TAG, "Recorded special notice shown in phone memory [" + medId + ", ver=" + ver + ", count=" + nextCount + "]");
+        return nextCount;
+    }
+
+    public static File getSpecialNoticeAudioFile(Context context, String medId) {
+        String safeId = (medId != null ? medId : "unknown").replaceAll("[^a-zA-Z0-9._-]", "_");
+        return new File(context.getFilesDir(), "special_notice_" + safeId + ".audio");
+    }
+
+    public static boolean isSpecialNoticeAudioCached(Context context, String medId, String audioUrl, String version) {
+        if (context == null || medId == null || audioUrl == null || audioUrl.trim().isEmpty()) return false;
+        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        File targetFile = getSpecialNoticeAudioFile(context, medId);
+        if (!targetFile.exists() || targetFile.length() <= 100) return false;
+        String ver = (version != null && !version.trim().isEmpty()) ? version.trim() : "1";
+        String sig = ver + "|" + audioUrl.hashCode();
+        String existingSig = prefs.getString("sn_audio_sig_" + medId, "");
+        return sig.equals(existingSig);
+    }
+
+    public static boolean cacheSingleSpecialNoticeAudio(Context context, String medId, String audioUrl, String version) {
+        if (context == null || medId == null || audioUrl == null || audioUrl.trim().isEmpty()) return false;
+        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        File targetFile = getSpecialNoticeAudioFile(context, medId);
+        String ver = (version != null && !version.trim().isEmpty()) ? version.trim() : "1";
+        String sig = ver + "|" + audioUrl.hashCode();
+        String existingSig = prefs.getString("sn_audio_sig_" + medId, "");
+
+        if (sig.equals(existingSig) && targetFile.exists() && targetFile.length() > 100) {
+            return true;
+        }
+
+        try {
+            String trimmed = audioUrl.trim();
+            if (trimmed.startsWith("data:")) {
+                int commaIdx = trimmed.indexOf(",");
+                if (commaIdx != -1) {
+                    byte[] audioBytes = Base64.decode(trimmed.substring(commaIdx + 1), Base64.DEFAULT);
+                    try (FileOutputStream fos = new FileOutputStream(targetFile)) {
+                        fos.write(audioBytes);
+                        fos.flush();
+                    }
+                    prefs.edit().putString("sn_audio_sig_" + medId, sig).apply();
+                    Log.i(TAG, "Cached base64 special notice audio for " + medId + " (" + targetFile.length() + " bytes)");
+                    return true;
+                }
+            } else {
+                String fullUrl = trimmed.startsWith("/") ? "https://eldersaath.vercel.app" + trimmed : trimmed;
+                if (fullUrl.startsWith("http")) {
+                    HttpURLConnection conn = (HttpURLConnection) new URL(fullUrl).openConnection();
+                    conn.setInstanceFollowRedirects(true);
+                    conn.setRequestProperty("x-app-alarm-secret", "ElderSaath-Hardware-Alarm-v1");
+                    conn.setConnectTimeout(12000);
+                    conn.setReadTimeout(20000);
+                    conn.connect();
+                    if (conn.getResponseCode() >= 200 && conn.getResponseCode() < 300) {
+                        File tmpFile = new File(context.getFilesDir(), targetFile.getName() + ".tmp");
+                        try (InputStream is = conn.getInputStream(); FileOutputStream fos = new FileOutputStream(tmpFile)) {
+                            byte[] buffer = new byte[4096];
+                            int read;
+                            while ((read = is.read(buffer)) != -1) {
+                                fos.write(buffer, 0, read);
+                            }
+                            fos.flush();
+                        }
+                        if (tmpFile.length() > 100) {
+                            if (targetFile.exists()) targetFile.delete();
+                            if (!tmpFile.renameTo(targetFile)) {
+                                // Copy fallback if rename fails across mounts
+                                try (InputStream fis = new java.io.FileInputStream(tmpFile);
+                                     FileOutputStream fos = new FileOutputStream(targetFile)) {
+                                    byte[] buf = new byte[4096];
+                                    int r;
+                                    while ((r = fis.read(buf)) != -1) fos.write(buf, 0, r);
+                                }
+                                tmpFile.delete();
+                            }
+                            prefs.edit().putString("sn_audio_sig_" + medId, sig).apply();
+                            Log.i(TAG, "Cached special notice audio for " + medId + " (" + targetFile.length() + " bytes)");
+                            conn.disconnect();
+                            return true;
+                        } else {
+                            tmpFile.delete();
+                        }
+                    }
+                    conn.disconnect();
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to cache special notice audio for " + medId + ": " + e.getMessage());
+        }
+        return false;
+    }
+
+    private static void cacheSpecialNoticeAudioFiles(final Context context, final JSONArray arr) {
+        if (context == null || arr == null) return;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Set<String> activeAudioFilenames = new HashSet<>();
+                    Map<String, String[]> toDownload = new HashMap<>();
+
+                    for (int i = 0; i < arr.length(); i++) {
+                        JSONObject obj = arr.optJSONObject(i);
+                        if (obj == null) continue;
+                        String id = obj.optString("id", "");
+                        boolean enabled = obj.optBoolean("specialNoticeEnabled", false);
+                        String noticeType = obj.optString("specialNoticeType", "TEXT");
+                        String audioUrl = obj.optString("specialNoticeAudioUrl", "");
+                        String ver = obj.optString("specialNoticeVersion", "1");
+
+                        if (!id.isEmpty() && enabled && "VOICE".equalsIgnoreCase(noticeType) && !audioUrl.trim().isEmpty()) {
+                            File target = getSpecialNoticeAudioFile(context, id);
+                            activeAudioFilenames.add(target.getName());
+                            toDownload.put(id, new String[]{audioUrl, ver});
+                        }
+                    }
+
+                    // Clean up unused/expired special notice audio files
+                    File[] files = context.getFilesDir().listFiles();
+                    if (files != null) {
+                        for (File f : files) {
+                            String fname = f.getName();
+                            if (fname.startsWith("special_notice_") && fname.endsWith(".audio") && !activeAudioFilenames.contains(fname)) {
+                                f.delete();
+                            }
+                        }
+                    }
+
+                    for (Map.Entry<String, String[]> entry : toDownload.entrySet()) {
+                        cacheSingleSpecialNoticeAudio(context, entry.getKey(), entry.getValue()[0], entry.getValue()[1]);
+                    }
+                } catch (Exception e) {
+                    Log.w(TAG, "cacheSpecialNoticeAudioFiles error: " + e.getMessage());
+                }
+            }
+        }).start();
     }
 
     /**

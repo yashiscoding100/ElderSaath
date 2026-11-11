@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma"
 
 export const dynamic = "force-dynamic"
 
-export async function GET(req: Request) {
+export async function GET() {
   try {
     // Add columns manually to bypass the need for npx prisma db push on Vercel
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "sosEnabled" BOOLEAN NOT NULL DEFAULT false;`)
@@ -26,16 +26,27 @@ export async function GET(req: Request) {
     await prisma.$executeRawUnsafe(`ALTER TABLE "Medication" ADD COLUMN IF NOT EXISTS "durationUnit" TEXT;`)
     await prisma.$executeRawUnsafe(`ALTER TABLE "Medication" ADD COLUMN IF NOT EXISTS "durationNotified" BOOLEAN NOT NULL DEFAULT false;`)
 
+    // Add Medication Special Post-Alarm Notice columns
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Medication" ADD COLUMN IF NOT EXISTS "specialNoticeEnabled" BOOLEAN NOT NULL DEFAULT false;`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Medication" ADD COLUMN IF NOT EXISTS "specialNoticeType" TEXT DEFAULT 'TEXT';`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Medication" ADD COLUMN IF NOT EXISTS "specialNoticeText" TEXT;`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Medication" ADD COLUMN IF NOT EXISTS "specialNoticeAudioUrl" TEXT;`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Medication" ADD COLUMN IF NOT EXISTS "specialNoticeAudioName" TEXT;`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Medication" ADD COLUMN IF NOT EXISTS "specialNoticeMaxCount" INTEGER NOT NULL DEFAULT 5;`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Medication" ADD COLUMN IF NOT EXISTS "specialNoticeShownCount" INTEGER NOT NULL DEFAULT 0;`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Medication" ADD COLUMN IF NOT EXISTS "specialNoticeVersion" TEXT;`)
+
     return NextResponse.json({ 
       success: true, 
       message: "Database updated successfully! All schema changes applied." 
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error"
     console.error(error)
     return NextResponse.json({ 
       success: false, 
       message: "Migration failed.", 
-      error: error?.message 
+      error: msg 
     }, { status: 500 })
   }
 }

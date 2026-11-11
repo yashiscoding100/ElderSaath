@@ -2,6 +2,16 @@
 import { convertTo12Hour } from "@/lib/timeUtils"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { SpecialNoticeEditor, SpecialNoticeState } from "@/components/child/SpecialNoticeEditor"
+
+const DEFAULT_NOTICE_STATE: SpecialNoticeState = {
+  enabled: false,
+  type: "TEXT",
+  text: "",
+  audioUrl: "",
+  audioName: "",
+  maxCount: 5
+}
 
 export function AddMedicineForm({ elderId }: { elderId: string }) {
   const router = useRouter()
@@ -20,30 +30,58 @@ export function AddMedicineForm({ elderId }: { elderId: string }) {
   const [durationValue, setDurationValue] = useState("8")
   const [durationUnit, setDurationUnit] = useState<"DAYS" | "WEEKS" | "MONTHS">("WEEKS")
 
+  // Optional post-alarm special notice
+  const [specialNotice, setSpecialNotice] = useState<SpecialNoticeState>(DEFAULT_NOTICE_STATE)
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (specialNotice.enabled) {
+      if (specialNotice.type === "TEXT" && !specialNotice.text.trim()) {
+        alert("Please enter the special notice text or switch to Voice Notice.")
+        return
+      }
+      if (specialNotice.type === "VOICE" && !specialNotice.audioUrl) {
+        alert("Please upload an audio file or record a voice notice.")
+        return
+      }
+    }
+
     setLoading(true)
     
     try {
-      const payload: any = {
+      const payload = {
         elderId,
         ...formData,
         time: convertTo12Hour(formData.time),
         durationValue: hasDuration && durationValue ? Number(durationValue) : null,
-        durationUnit: hasDuration && durationValue ? durationUnit : null
+        durationUnit: hasDuration && durationValue ? durationUnit : null,
+        specialNoticeEnabled: specialNotice.enabled,
+        specialNoticeType: specialNotice.type,
+        specialNoticeText: specialNotice.text,
+        specialNoticeAudioUrl: specialNotice.audioUrl,
+        specialNoticeAudioName: specialNotice.audioName,
+        specialNoticeMaxCount: specialNotice.maxCount
       }
 
-      await fetch("/api/medications", {
+      const res = await fetch("/api/medications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(err.message || "Failed to save medicine")
+        return
+      }
 
       setIsOpen(false)
       setFormData({ name: "", dosage: "", frequency: "0,1,2,3,4,5,6", time: "08:00", instructions: "" })
       setHasDuration(false)
       setDurationValue("8")
       setDurationUnit("WEEKS")
+      setSpecialNotice(DEFAULT_NOTICE_STATE)
       router.refresh()
     } catch (error) {
       console.error(error)
@@ -160,7 +198,7 @@ export function AddMedicineForm({ elderId }: { elderId: string }) {
                   <select
                     className="w-full bg-white border border-purple-300 p-2 rounded-lg text-slate-900 font-bold text-sm outline-none focus:ring-2 focus:ring-purple-400"
                     value={durationUnit}
-                    onChange={e => setDurationUnit(e.target.value as any)}
+                    onChange={e => setDurationUnit(e.target.value as "DAYS" | "WEEKS" | "MONTHS")}
                   >
                     <option value="DAYS">Days</option>
                     <option value="WEEKS">Weeks</option>
@@ -173,6 +211,9 @@ export function AddMedicineForm({ elderId }: { elderId: string }) {
               </div>
             )}
           </div>
+
+          {/* Post-Alarm Special Notice (Text or Voice for N times) */}
+          <SpecialNoticeEditor value={specialNotice} onChange={setSpecialNotice} />
           
           <div className="flex justify-end gap-3 mt-6">
             <button type="button" onClick={() => setIsOpen(false)} className="px-5 py-2.5 text-slate-600 font-bold hover:bg-slate-100 rounded-lg transition">Cancel</button>

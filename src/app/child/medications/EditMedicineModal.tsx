@@ -2,8 +2,9 @@
 import { convertTo12Hour, convertTo24Hour } from "@/lib/timeUtils"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { SpecialNoticeEditor, SpecialNoticeState } from "@/components/child/SpecialNoticeEditor"
 
-type Medication = {
+export type MedicationItem = {
   id: string
   name: string
   dosage: string
@@ -14,9 +15,37 @@ type Medication = {
   endDate?: Date | string | null
   durationValue?: number | null
   durationUnit?: string | null
+  specialNoticeEnabled?: boolean
+  specialNoticeType?: string | null
+  specialNoticeText?: string | null
+  specialNoticeAudioUrl?: string | null
+  specialNoticeAudioName?: string | null
+  specialNoticeMaxCount?: number | null
+  specialNoticeShownCount?: number | null
+  specialNoticeVersion?: string | null
 }
 
-export function EditMedicineModal({ med }: { med: Medication }) {
+type DurationUnit = "DAYS" | "WEEKS" | "MONTHS"
+
+function parseDurationUnit(unit?: string | null): DurationUnit {
+  if (unit === "DAYS" || unit === "MONTHS") return unit
+  return "WEEKS"
+}
+
+function buildInitialNoticeState(med: MedicationItem): SpecialNoticeState {
+  return {
+    enabled: Boolean(med.specialNoticeEnabled),
+    type: med.specialNoticeType === "VOICE" ? "VOICE" : "TEXT",
+    text: med.specialNoticeText || "",
+    audioUrl: med.specialNoticeAudioUrl || "",
+    audioName: med.specialNoticeAudioName || "",
+    maxCount: med.specialNoticeMaxCount && med.specialNoticeMaxCount > 0 ? med.specialNoticeMaxCount : 5,
+    shownCount: med.specialNoticeShownCount ?? 0,
+    resetCount: false
+  }
+}
+
+export function EditMedicineModal({ med }: { med: MedicationItem }) {
   const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -31,9 +60,11 @@ export function EditMedicineModal({ med }: { med: Medication }) {
 
   const [hasDuration, setHasDuration] = useState(Boolean(med.durationValue && med.durationUnit))
   const [durationValue, setDurationValue] = useState(med.durationValue ? String(med.durationValue) : "8")
-  const [durationUnit, setDurationUnit] = useState<"DAYS" | "WEEKS" | "MONTHS">(
-    (med.durationUnit as any) || "WEEKS"
+  const [durationUnit, setDurationUnit] = useState<DurationUnit>(
+    parseDurationUnit(med.durationUnit)
   )
+
+  const [specialNotice, setSpecialNotice] = useState<SpecialNoticeState>(() => buildInitialNoticeState(med))
 
   const handleOpen = () => {
     setFormData({
@@ -45,21 +76,41 @@ export function EditMedicineModal({ med }: { med: Medication }) {
     })
     setHasDuration(Boolean(med.durationValue && med.durationUnit))
     setDurationValue(med.durationValue ? String(med.durationValue) : "8")
-    setDurationUnit((med.durationUnit as any) || "WEEKS")
+    setDurationUnit(parseDurationUnit(med.durationUnit))
+    setSpecialNotice(buildInitialNoticeState(med))
     setIsOpen(true)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (specialNotice.enabled) {
+      if (specialNotice.type === "TEXT" && !specialNotice.text.trim()) {
+        alert("Please enter the special notice text or switch to Voice Notice.")
+        return
+      }
+      if (specialNotice.type === "VOICE" && !specialNotice.audioUrl) {
+        alert("Please upload an audio file or record a voice notice.")
+        return
+      }
+    }
+
     setLoading(true)
     
     try {
-      const payload: any = {
+      const payload = {
         id: med.id,
         ...formData,
         time: convertTo12Hour(formData.time),
         durationValue: hasDuration && durationValue ? Number(durationValue) : null,
-        durationUnit: hasDuration && durationValue ? durationUnit : null
+        durationUnit: hasDuration && durationValue ? durationUnit : null,
+        specialNoticeEnabled: specialNotice.enabled,
+        specialNoticeType: specialNotice.type,
+        specialNoticeText: specialNotice.text,
+        specialNoticeAudioUrl: specialNotice.audioUrl,
+        specialNoticeAudioName: specialNotice.audioName,
+        specialNoticeMaxCount: specialNotice.maxCount,
+        resetSpecialNoticeCount: Boolean(specialNotice.resetCount)
       }
 
       const res = await fetch("/api/medications", {
@@ -187,7 +238,7 @@ export function EditMedicineModal({ med }: { med: Medication }) {
                   <select
                     className="w-full bg-white border border-purple-300 p-2 rounded-lg text-slate-900 font-bold text-sm outline-none focus:ring-2 focus:ring-purple-400"
                     value={durationUnit}
-                    onChange={e => setDurationUnit(e.target.value as any)}
+                    onChange={e => setDurationUnit(e.target.value as DurationUnit)}
                   >
                     <option value="DAYS">Days</option>
                     <option value="WEEKS">Weeks</option>
@@ -200,6 +251,9 @@ export function EditMedicineModal({ med }: { med: Medication }) {
               </div>
             )}
           </div>
+
+          {/* Post-Alarm Special Notice */}
+          <SpecialNoticeEditor value={specialNotice} onChange={setSpecialNotice} isEdit />
           
           <div className="flex justify-end gap-3 mt-6">
             <button type="button" onClick={() => setIsOpen(false)} className="px-5 py-2.5 text-slate-600 font-bold hover:bg-slate-100 rounded-lg transition">Cancel</button>

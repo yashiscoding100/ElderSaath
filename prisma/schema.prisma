@@ -142,6 +142,15 @@ model Medication {
   durationUnit     String? // "DAYS", "WEEKS", "MONTHS"
   durationNotified Boolean   @default(false)
 
+  specialNoticeEnabled    Boolean @default(false)
+  specialNoticeType       String? @default("TEXT") // "TEXT" | "VOICE"
+  specialNoticeText       String? @db.Text
+  specialNoticeAudioUrl   String? @db.Text
+  specialNoticeAudioName  String?
+  specialNoticeMaxCount   Int     @default(5)
+  specialNoticeShownCount Int     @default(0)
+  specialNoticeVersion    String?
+
   logs      MedicationLog[]
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt

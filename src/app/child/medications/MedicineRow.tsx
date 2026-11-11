@@ -3,30 +3,17 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { BellRing, Calendar } from "lucide-react"
-import { EditMedicineModal } from "./EditMedicineModal"
+import { EditMedicineModal, MedicationItem } from "./EditMedicineModal"
 import { formatDurationSummary, isMedicationExpired } from "@/lib/medicationDurationUtils"
 
-type Medication = {
-  id: string
-  name: string
-  dosage: string
-  time: string
-  frequency: string
-  instructions: string | null
-  startDate?: Date | string | null
-  endDate?: Date | string | null
-  durationValue?: number | null
-  durationUnit?: string | null
-}
-
-export function MedicineRow({ med }: { med: Medication }) {
+export function MedicineRow({ med }: { med: MedicationItem }) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [testing, setTesting] = useState(false)
 
   const formatFreq = (f: string) => {
     if (!f || f.toLowerCase() === "daily" || f === "0,1,2,3,4,5,6") return "Every Day"
-    const map: any = { "0": "Sun", "1": "Mon", "2": "Tue", "3": "Wed", "4": "Thu", "5": "Fri", "6": "Sat" }
+    const map: Record<string, string> = { "0": "Sun", "1": "Mon", "2": "Tue", "3": "Wed", "4": "Thu", "5": "Fri", "6": "Sat" }
     return f.split(",").map(d => map[d.trim()]).filter(Boolean).join(", ")
   }
 
@@ -58,8 +45,8 @@ export function MedicineRow({ med }: { med: Medication }) {
       } else {
         alert("Error dispatching alarm: " + (data.message || "Unknown error"))
       }
-    } catch (e: any) {
-      alert("Network error: " + e.message)
+    } catch (e: unknown) {
+      alert("Network error: " + (e instanceof Error ? e.message : String(e)))
     } finally {
       setTesting(false)
     }
@@ -68,14 +55,33 @@ export function MedicineRow({ med }: { med: Medication }) {
   const isExpired = isMedicationExpired(med.endDate)
   const durationText = formatDurationSummary(med.durationValue, med.durationUnit, med.endDate)
 
+  const shownCount = med.specialNoticeShownCount ?? 0
+  const maxCount = med.specialNoticeMaxCount ?? 5
+  const noticeDone = Boolean(med.specialNoticeEnabled) && shownCount >= maxCount
+
   return (
     <tr className={`transition group ${isExpired ? 'bg-slate-50/60 opacity-80' : 'hover:bg-slate-50'}`}>
       <td className="p-4 px-6 font-bold text-slate-900">
-        <div className="flex items-center gap-2">
-          <span>{med.name}</span>
-          {isExpired && (
-            <span className="text-[10px] uppercase font-black px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
-              Completed
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <span>{med.name}</span>
+            {isExpired && (
+              <span className="text-[10px] uppercase font-black px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                Completed
+              </span>
+            )}
+          </div>
+          {med.specialNoticeEnabled && (
+            <span
+              className={`inline-flex items-center gap-1 w-fit text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                noticeDone
+                  ? "bg-slate-100 text-slate-600 border-slate-200"
+                  : "bg-amber-50 text-amber-800 border-amber-200"
+              }`}
+              title={med.specialNoticeType === "VOICE" ? "Post-alarm voice notice" : "Post-alarm text notice"}
+            >
+              {med.specialNoticeType === "VOICE" ? "🎙️ Voice Notice" : "📝 Text Notice"}: {Math.min(shownCount, maxCount)}/{maxCount}
+              {noticeDone ? " (Done)" : ""}
             </span>
           )}
         </div>

@@ -225,6 +225,24 @@ public class MyMessagingService extends MessagingService {
                 if (medicationId != null) fullScreenIntent.putExtra("medicationId", medicationId);
                 String alarmType = remoteMessage.getData().get("type");
                 if (alarmType != null) fullScreenIntent.putExtra("type", alarmType);
+
+                // Forward optional post-alarm Special Notice metadata (used when testing alarms from dashboard)
+                if (remoteMessage.getData().containsKey("specialNoticeEnabled")) {
+                    boolean snEnabled = "true".equalsIgnoreCase(remoteMessage.getData().get("specialNoticeEnabled"));
+                    fullScreenIntent.putExtra("specialNoticeEnabled", snEnabled);
+                    if (snEnabled) {
+                        fullScreenIntent.putExtra("specialNoticeType", remoteMessage.getData().get("specialNoticeType"));
+                        fullScreenIntent.putExtra("specialNoticeText", remoteMessage.getData().get("specialNoticeText"));
+                        fullScreenIntent.putExtra("specialNoticeAudioUrl", remoteMessage.getData().get("specialNoticeAudioUrl"));
+                        fullScreenIntent.putExtra("specialNoticeVersion", remoteMessage.getData().get("specialNoticeVersion"));
+                        try {
+                            String maxStr = remoteMessage.getData().get("specialNoticeMaxCount");
+                            if (maxStr != null) fullScreenIntent.putExtra("specialNoticeMaxCount", Integer.parseInt(maxStr));
+                            String shownStr = remoteMessage.getData().get("specialNoticeShownCount");
+                            if (shownStr != null) fullScreenIntent.putExtra("specialNoticeShownCount", Integer.parseInt(shownStr));
+                        } catch (Exception ignored) {}
+                    }
+                }
                 
                 fullScreenIntent.setFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK | 

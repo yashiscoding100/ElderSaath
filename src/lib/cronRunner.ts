@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma"
 import { sendPushNotification } from "@/lib/push"
+import { resolveCompactNoticeAudioUrl } from "@/lib/alarmSync"
 
 export async function runMedicationAndTaskCrons(forceAll: boolean = false) {
   // Time-based alarms are now fully scheduled and saved directly on the Android hardware AlarmManager.
@@ -24,15 +25,21 @@ export async function runMedicationAndTaskCrons(forceAll: boolean = false) {
   })
 
   let firedMedsCount = 0
-  const details: any[] = []
+  const details: Array<{ medId: string; medName: string; elderId: string; time: string }> = []
 
   for (const med of allMeds) {
     firedMedsCount++
     details.push({ medId: med.id, medName: med.name, elderId: med.elderId, time: med.time })
     try {
+      const noticeAudioUrl =
+        med.specialNoticeEnabled && med.specialNoticeType === "VOICE"
+          ? resolveCompactNoticeAudioUrl(med.id, med.specialNoticeAudioUrl, med.specialNoticeVersion, true)
+          : undefined
+
       await sendPushNotification(med.elderId, {
         type: "ALARM",
-        actionText: "Take medicines",
+        medicationId: med.id,
+        actionText: "TAKE MEDICINE / STOP ALARM",
         label: `Test Alarm: ${med.name}`,
         body: `Dosage: ${med.dosage || '1 tablet'}. Instructions: ${med.instructions || 'Manual test alarm'}`,
         snoozeText: med.elder.alarmSnoozeText || "Take later",
@@ -40,7 +47,16 @@ export async function runMedicationAndTaskCrons(forceAll: boolean = false) {
         autoSnoozeEnabled: String(med.elder.autoSnoozeEnabled === true),
         autoSnoozeAfterSeconds: String(med.elder.autoSnoozeAfterSeconds ?? 60),
         elderId: med.elderId,
-        stickyNotification: med.elder.elderProfile?.stickyAlarmNotification !== false ? "true" : "false"
+        stickyNotification: med.elder.elderProfile?.stickyAlarmNotification !== false ? "true" : "false",
+        ...(med.specialNoticeEnabled ? {
+          specialNoticeEnabled: "true",
+          specialNoticeType: med.specialNoticeType === "VOICE" ? "VOICE" : "TEXT",
+          specialNoticeText: (med.specialNoticeText || "").slice(0, 800),
+          specialNoticeAudioUrl: noticeAudioUrl || "",
+          specialNoticeMaxCount: String(med.specialNoticeMaxCount || 5),
+          specialNoticeShownCount: String(med.specialNoticeShownCount || 0),
+          specialNoticeVersion: med.specialNoticeVersion || "1"
+        } : {})
       })
     } catch (err) {
       console.error(`[CronRunner] Manual test error for ${med.name}:`, err)

@@ -1,57 +1,200 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import { useSession } from "next-auth/react"
+
+interface SyncedMedicationDto {
+  id: string
+  name: string
+  dosage?: string | null
+  time: string
+  frequency?: string | null
+  instructions?: string | null
+  elderId?: string
+  endDate?: string | null
+  specialNoticeEnabled?: boolean
+  specialNoticeType?: string | null
+  specialNoticeText?: string | null
+  specialNoticeAudioUrl?: string | null
+  specialNoticeMaxCount?: number | null
+  specialNoticeShownCount?: number | null
+  specialNoticeVersion?: string | null
+}
+
+interface SyncedTaskDto {
+  id: string
+  title: string
+  description?: string | null
+  time?: string | null
+  frequency?: string | null
+  triggerAlarm?: boolean
+  elderId?: string
+}
+
+interface SyncedAlarmItem {
+  id: string
+  name: string
+  dosage: string
+  time: string
+  frequency: string
+  instructions: string
+  elderId: string
+  type: "MEDICATION" | "TASK"
+  label: string
+  body: string
+  actionText: string
+  specialNoticeEnabled?: boolean
+  specialNoticeType?: "TEXT" | "VOICE"
+  specialNoticeText?: string
+  specialNoticeAudioUrl?: string
+  specialNoticeMaxCount?: number
+  specialNoticeShownCount?: number
+  specialNoticeVersion?: string
+}
+
+interface PendingSpecialNoticeSyncItem {
+  medicationId: string
+  version: string
+  shownCount: number
+  entry: string
+}
+
+interface AlarmSyncPluginNative {
+  getPendingSpecialNoticeSync?: () => Promise<{ items?: PendingSpecialNoticeSyncItem[] }>
+  clearPendingSpecialNoticeSync?: (arg: { entries: string[] }) => Promise<void>
+  getPendingTakenMedications?: () => Promise<{ pendingIds?: string[] }>
+  clearPendingTakenMedication?: (arg: { medicationId: string }) => Promise<void>
+  syncAlarms?: (arg: { medications: SyncedAlarmItem[] }) => Promise<{ count?: number }>
+  syncSosSettings?: (arg: {
+    ambulanceNumber?: string
+    sosCallAmbulance?: boolean
+    sosAlertFamily?: boolean
+    sosLocalSiren?: boolean
+    elderId: string
+    elderName: string
+  }) => Promise<void>
+  syncAlarmTone?: (arg: { enabled: boolean; toneUrl: string; toneTitle: string }) => Promise<void>
+  syncHealthPreferences?: (arg: { requiredVitals: unknown; elderId: string; elderName: string }) => Promise<void>
+  syncAlarmSettings?: (arg: {
+    elderId: string
+    alarmSnoozeText: string
+    alarmSnoozeDuration: number
+    autoSnoozeEnabled: boolean
+    autoSnoozeAfterSeconds: number
+    stickyAlarmNotification: boolean
+  }) => Promise<void>
+}
+
+type ElderWindow = Window & {
+  Capacitor?: { Plugins?: { AlarmSyncPlugin?: AlarmSyncPluginNative } }
+  __syncElderAlarms?: () => Promise<void>
+}
 
 export function MedicationAlarmSync() {
   const { data: session } = useSession()
   const isSyncing = useRef(false)
+  const userId = session?.user?.id
+  const userRole = session?.user?.role
+  const userName = session?.user?.name
 
-  const fetchAndSync = async () => {
-    if (!session || session.user.role !== "ELDER") return
+  const fetchAndSync = useCallback(async () => {
+    if (!userId || userRole !== "ELDER") return
     if (isSyncing.current) return
     isSyncing.current = true
 
     try {
+      const capacitor = (window as ElderWindow).Capacitor
+      const AlarmSyncPlugin = capacitor?.Plugins?.AlarmSyncPlugin
+
+      // 0. Flush any pending special-notice shown counts recorded offline BEFORE pulling meds
+      if (AlarmSyncPlugin && typeof AlarmSyncPlugin.getPendingSpecialNoticeSync === "function") {
+        try {
+          const snRes = await AlarmSyncPlugin.getPendingSpecialNoticeSync()
+          const snItems = snRes?.items || []
+          if (snItems.length > 0) {
+            const syncRes = await fetch("/api/medications/notice-shown", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                items: snItems.map((it) => ({
+                  medicationId: it.medicationId,
+                  elderId: userId,
+                  version: it.version,
+                  shownCount: it.shownCount
+                }))
+              })
+            }).catch(() => null)
+            if (syncRes && syncRes.ok && typeof AlarmSyncPlugin.clearPendingSpecialNoticeSync === "function") {
+              await AlarmSyncPlugin.clearPendingSpecialNoticeSync({
+                entries: snItems.map((it) => it.entry)
+              }).catch(() => {})
+            }
+          }
+        } catch (snErr) {
+          console.warn("[MedicationAlarmSync] Flush pending special notice sync error:", snErr)
+        }
+      }
+
       // 1. Fetch Medications and Tasks with Alarms in parallel
       const [medsRes, tasksRes] = await Promise.all([
         fetch("/api/medications").catch(() => null),
         fetch("/api/tasks").catch(() => null)
       ])
 
-      const meds = medsRes && medsRes.ok ? await medsRes.json() : []
-      const tasks = tasksRes && tasksRes.ok ? await tasksRes.json() : []
+      const meds: SyncedMedicationDto[] = medsRes && medsRes.ok ? await medsRes.json() : []
+      const tasks: SyncedTaskDto[] = tasksRes && tasksRes.ok ? await tasksRes.json() : []
 
       // Build unified alarm items list (excluding medications whose prescribed duration has finished)
       const nowMs = Date.now()
-      const activeMeds = Array.isArray(meds) ? meds.filter((m: any) => {
+      const activeMeds = Array.isArray(meds) ? meds.filter((m) => {
         if (!m.endDate) return true
         const endMs = new Date(m.endDate).getTime()
         return nowMs <= endMs
       }) : []
 
-      const alarmItems: any[] = [
-        ...activeMeds.map((m: any) => ({
-          id: m.id,
-          name: m.name,
-          dosage: m.dosage || "",
-          time: m.time,
-          frequency: m.frequency || "daily",
-          instructions: m.instructions || "",
-          elderId: m.elderId || session.user.id,
-          type: "MEDICATION",
-          label: `Time for ${m.name}`,
-          body: `Dosage: ${m.dosage || "Scheduled Dose"}${m.instructions ? ". " + m.instructions : ""}`,
-          actionText: "TAKE MEDICINE / STOP ALARM"
-        })),
-        ...(Array.isArray(tasks) ? tasks.filter((t: any) => t.triggerAlarm && t.time).map((t: any) => ({
+      const baseOrigin =
+        typeof window !== "undefined" && window.location.origin.startsWith("http")
+          ? window.location.origin
+          : "https://eldersaath.vercel.app"
+
+      const alarmItems: SyncedAlarmItem[] = [
+        ...activeMeds.map((m) => {
+          const item: SyncedAlarmItem = {
+            id: m.id,
+            name: m.name,
+            dosage: m.dosage || "",
+            time: m.time,
+            frequency: m.frequency || "daily",
+            instructions: m.instructions || "",
+            elderId: m.elderId || userId,
+            type: "MEDICATION",
+            label: `Time for ${m.name}`,
+            body: `Dosage: ${m.dosage || "Scheduled Dose"}${m.instructions ? ". " + m.instructions : ""}`,
+            actionText: "TAKE MEDICINE / STOP ALARM"
+          }
+          if (m.specialNoticeEnabled) {
+            item.specialNoticeEnabled = true
+            item.specialNoticeType = m.specialNoticeType === "VOICE" ? "VOICE" : "TEXT"
+            item.specialNoticeText = m.specialNoticeText || ""
+            item.specialNoticeMaxCount = Number(m.specialNoticeMaxCount || 5)
+            item.specialNoticeShownCount = Number(m.specialNoticeShownCount || 0)
+            item.specialNoticeVersion = m.specialNoticeVersion || "1"
+            if (m.specialNoticeAudioUrl) {
+              item.specialNoticeAudioUrl = m.specialNoticeAudioUrl.startsWith("/")
+                ? baseOrigin + m.specialNoticeAudioUrl
+                : m.specialNoticeAudioUrl
+            }
+          }
+          return item
+        }),
+        ...(Array.isArray(tasks) ? tasks.filter((t) => t.triggerAlarm && t.time).map((t): SyncedAlarmItem => ({
           id: t.id,
           name: t.title,
           dosage: "",
-          time: t.time,
+          time: t.time || "",
           frequency: t.frequency || "daily",
           instructions: t.description || "",
-          elderId: t.elderId || session.user.id,
+          elderId: t.elderId || userId,
           type: "TASK",
           label: `Task: ${t.title}`,
           body: t.description || "Important task scheduled for now.",
@@ -65,9 +208,6 @@ export function MedicationAlarmSync() {
       } catch (e) {
         console.warn("[MedicationAlarmSync] LocalStorage cache warning:", e)
       }
-
-      const capacitor = (window as any).Capacitor
-      const AlarmSyncPlugin = capacitor?.Plugins?.AlarmSyncPlugin
 
       // Flush any pending taken medications logged by native AlarmActivity
       if (AlarmSyncPlugin && typeof AlarmSyncPlugin.getPendingTakenMedications === "function") {
@@ -114,8 +254,8 @@ export function MedicationAlarmSync() {
                 sosCallAmbulance: sosData.config.sosCallAmbulance,
                 sosAlertFamily: sosData.config.sosAlertFamily,
                 sosLocalSiren: sosData.config.sosLocalSiren,
-                elderId: session.user.id,
-                elderName: session.user.name || "Elder"
+                elderId: userId,
+                elderName: userName || "Elder"
               })
               console.log("[MedicationAlarmSync] SOS Widget settings synced.")
             } catch (sosErr) {
@@ -133,9 +273,6 @@ export function MedicationAlarmSync() {
           try {
             let finalUrl = toneData.config.toneUrl || ""
             if (finalUrl && finalUrl.startsWith("/")) {
-              const baseOrigin = typeof window !== "undefined" && window.location.origin.startsWith("http")
-                ? window.location.origin
-                : "https://eldersaath.vercel.app"
               finalUrl = baseOrigin + finalUrl
             }
 
@@ -159,8 +296,8 @@ export function MedicationAlarmSync() {
           try {
             await AlarmSyncPlugin.syncHealthPreferences({
               requiredVitals: prefData.requiredVitals,
-              elderId: session.user.id,
-              elderName: session.user.name || "Elder"
+              elderId: userId,
+              elderName: userName || "Elder"
             })
             console.log("[MedicationAlarmSync] Health Check Widget preferences synced:", prefData.requiredVitals)
           } catch (prefErr) {
@@ -169,7 +306,7 @@ export function MedicationAlarmSync() {
         }
 
         const alarmSettings = {
-          elderId: session.user.id,
+          elderId: userId,
           alarmSnoozeText: prefData?.alarmSnoozeText || "Take later",
           alarmSnoozeDuration: Number(prefData?.alarmSnoozeDuration ?? 10),
           autoSnoozeEnabled: prefData?.autoSnoozeEnabled === true,
@@ -195,13 +332,13 @@ export function MedicationAlarmSync() {
     } finally {
       isSyncing.current = false
     }
-  }
+  }, [userId, userRole, userName])
 
   useEffect(() => {
-    if (!session || session.user.role !== "ELDER") return
+    if (!userId || userRole !== "ELDER") return
 
     // Expose global helper for instant re-sync
-    ;(window as any).__syncElderAlarms = fetchAndSync
+    ;(window as ElderWindow).__syncElderAlarms = fetchAndSync
 
     // Initial sync on app load
     fetchAndSync()
@@ -226,7 +363,7 @@ export function MedicationAlarmSync() {
       window.removeEventListener("eldersaath:refresh-tasks", handleCustomSync)
       clearInterval(interval)
     }
-  }, [session])
+  }, [userId, userRole, fetchAndSync])
 
   return null
 }

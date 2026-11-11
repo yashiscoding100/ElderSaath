@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { sendPushNotification } from "@/lib/push"
+import { resolveCompactNoticeAudioUrl } from "@/lib/alarmSync"
 
 export const dynamic = "force-dynamic"
 
@@ -20,10 +21,16 @@ export async function POST(req: Request) {
 
     if (!med) return NextResponse.json({ message: "Medication not found" }, { status: 404 })
 
+    const noticeAudioUrl =
+      med.specialNoticeEnabled && med.specialNoticeType === "VOICE"
+        ? resolveCompactNoticeAudioUrl(med.id, med.specialNoticeAudioUrl, med.specialNoticeVersion, true)
+        : undefined
+
     // Fire the hyper-aggressive alarm push directly to the elder
     await sendPushNotification(med.elderId, {
       type: "ALARM",
-      actionText: "Take medicines",
+      medicationId: med.id,
+      actionText: "TAKE MEDICINE / STOP ALARM",
       label: `Time for ${med.name}`,
       body: `Dosage: ${med.dosage}. ${med.instructions || 'Scheduled medication test.'}`.trim(),
       snoozeText: med.elder.alarmSnoozeText || "Take later",
@@ -31,12 +38,22 @@ export async function POST(req: Request) {
       autoSnoozeEnabled: String(med.elder.autoSnoozeEnabled === true),
       autoSnoozeAfterSeconds: String(med.elder.autoSnoozeAfterSeconds ?? 60),
       elderId: med.elderId,
-      stickyNotification: med.elder.elderProfile?.stickyAlarmNotification !== false ? "true" : "false"
+      stickyNotification: med.elder.elderProfile?.stickyAlarmNotification !== false ? "true" : "false",
+      specialNoticeEnabled: med.specialNoticeEnabled ? "true" : "false",
+      ...(med.specialNoticeEnabled ? {
+        specialNoticeType: med.specialNoticeType === "VOICE" ? "VOICE" : "TEXT",
+        specialNoticeText: (med.specialNoticeText || "").slice(0, 800),
+        specialNoticeAudioUrl: noticeAudioUrl || "",
+        specialNoticeMaxCount: String(med.specialNoticeMaxCount || 5),
+        specialNoticeShownCount: String(med.specialNoticeShownCount || 0),
+        specialNoticeVersion: med.specialNoticeVersion || "1"
+      } : {})
     })
 
     return NextResponse.json({ message: `Alarm dispatched to ${med.elder.name}` }, { status: 200 })
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error"
     console.error("[api/medications/test] Error:", error)
-    return NextResponse.json({ message: "Failed to test alarm", error: error.message }, { status: 500 })
+    return NextResponse.json({ message: "Failed to test alarm", error: msg }, { status: 500 })
   }
 }

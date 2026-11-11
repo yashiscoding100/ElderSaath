@@ -21,11 +21,11 @@ import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.util.Log;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.widget.Button;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -45,6 +45,7 @@ public class AlarmActivity extends Activity {
     public static volatile AlarmActivity currentInstance = null;
 
     private MediaPlayer mediaPlayer;
+    private MediaPlayer specialNoticePlayer;
     private Vibrator vibrator;
     private PowerManager.WakeLock wakeLock;
     private Handler autoSnoozeHandler;
@@ -65,6 +66,7 @@ public class AlarmActivity extends Activity {
                 currentInstance.alarmHandled = true;
                 currentInstance.cancelAutoSnoozeTimer();
                 currentInstance.stopAlarmAndSound();
+                currentInstance.stopSpecialNoticeAudio();
                 currentInstance.finish();
                 currentInstance = null;
             }
@@ -85,6 +87,7 @@ public class AlarmActivity extends Activity {
                 currentInstance.alarmHandled = true;
                 currentInstance.cancelAutoSnoozeTimer();
                 currentInstance.stopAlarmAndSound();
+                currentInstance.stopSpecialNoticeAudio();
                 currentInstance.finish();
                 currentInstance = null;
             }
@@ -177,25 +180,13 @@ public class AlarmActivity extends Activity {
         } catch (Exception ignored) {}
 
         String medicationId = getIntent().getStringExtra("medicationId");
-
-        // If medicationId wasn't passed directly, look it up in cached alarms
-        if ((medicationId == null || medicationId.isEmpty()) && label != null) {
-            try {
-                SharedPreferences prefs = getSharedPreferences("ElderSaathAlarms", Context.MODE_PRIVATE);
-                String cachedMeds = prefs.getString("cached_alarms_json", "");
-                if (cachedMeds != null && !cachedMeds.isEmpty()) {
-                    JSONArray arr = new JSONArray(cachedMeds);
-                    for (int i = 0; i < arr.length(); i++) {
-                        JSONObject obj = arr.getJSONObject(i);
-                        String name = obj.optString("name", "");
-                        if (!name.isEmpty() && label.contains(name)) {
-                            medicationId = obj.optString("id");
-                            if (alarmType == null) alarmType = obj.optString("type", "MEDICATION");
-                            break;
-                        }
-                    }
-                }
-            } catch (Exception ignored) {}
+        JSONObject cachedMed = AlarmScheduler.getMedicationFromCache(this, medicationId, label);
+        if ((medicationId == null || medicationId.isEmpty()) && cachedMed != null) {
+            medicationId = cachedMed.optString("id", "");
+            if (alarmType == null || "ALARM".equalsIgnoreCase(alarmType)) {
+                String cachedType = cachedMed.optString("type", "MEDICATION");
+                if (!cachedType.isEmpty()) alarmType = cachedType;
+            }
         }
 
         final String finalMedicationId = medicationId;
@@ -204,6 +195,17 @@ public class AlarmActivity extends Activity {
 
         // 4. Set Clean, Responsive XML Layout
         setContentView(R.layout.activity_alarm);
+
+        final LinearLayout layoutAlarmControls = findViewById(R.id.layoutAlarmControls);
+        final LinearLayout layoutSpecialNotice = findViewById(R.id.layoutSpecialNotice);
+        final TextView tvSpecialNoticeCounter = findViewById(R.id.tvSpecialNoticeCounter);
+        final TextView tvSpecialNoticeMed = findViewById(R.id.tvSpecialNoticeMed);
+        final LinearLayout layoutNoticeTextBox = findViewById(R.id.layoutNoticeTextBox);
+        final TextView tvSpecialNoticeText = findViewById(R.id.tvSpecialNoticeText);
+        final LinearLayout layoutNoticeVoiceBox = findViewById(R.id.layoutNoticeVoiceBox);
+        final TextView tvSpecialNoticeVoiceStatus = findViewById(R.id.tvSpecialNoticeVoiceStatus);
+        final Button btnReplaySpecialNotice = findViewById(R.id.btnReplaySpecialNotice);
+        final Button btnCloseSpecialNotice = findViewById(R.id.btnCloseSpecialNotice);
 
         TextView alertBadge = findViewById(R.id.tvAlarmBadge);
         TextView iconView = findViewById(R.id.tvAlarmIcon);
@@ -311,10 +313,101 @@ public class AlarmActivity extends Activity {
                 if ("TASK".equalsIgnoreCase(finalAlarmType)) {
                     markMedicationOrTaskTaken(AlarmActivity.this, finalMedicationId, finalElderId, "TASK");
                     Toast.makeText(AlarmActivity.this, "✓ Task completed!", Toast.LENGTH_SHORT).show();
-                } else {
-                    markMedicationOrTaskTaken(AlarmActivity.this, finalMedicationId, finalElderId, "MEDICATION");
-                    Toast.makeText(AlarmActivity.this, "✓ Medicine marked as taken!", Toast.LENGTH_SHORT).show();
+                    finish();
+                    return;
                 }
+
+                markMedicationOrTaskTaken(AlarmActivity.this, finalMedicationId, finalElderId, "MEDICATION");
+
+                // Check phone memory + intent for a post-alarm Special Notice for this medicine
+                JSONObject latestMed = AlarmScheduler.getMedicationFromCache(AlarmActivity.this, finalMedicationId, finalLabel);
+                boolean snEnabled = false;
+                String snType = "TEXT";
+                String snText = "";
+                String snAudioUrl = "";
+                int snMaxCount = 5;
+                int snServerShown = 0;
+                String snVersion = "1";
+
+                if (getIntent().hasExtra("specialNoticeEnabled")) {
+                    snEnabled = getIntent().getBooleanExtra("specialNoticeEnabled", false);
+                    String t = getIntent().getStringExtra("specialNoticeType");
+                    if (t != null) snType = t;
+                    String txt = getIntent().getStringExtra("specialNoticeText");
+                    if (txt != null) snText = txt;
+                    String aud = getIntent().getStringExtra("specialNoticeAudioUrl");
+                    if (aud != null) snAudioUrl = aud;
+                    snMaxCount = Math.max(1, getIntent().getIntExtra("specialNoticeMaxCount", 5));
+                    snServerShown = Math.max(0, getIntent().getIntExtra("specialNoticeShownCount", 0));
+                    String ver = getIntent().getStringExtra("specialNoticeVersion");
+                    if (ver != null && !ver.isEmpty()) snVersion = ver;
+                } else if (latestMed != null && latestMed.optBoolean("specialNoticeEnabled", false)) {
+                    snEnabled = true;
+                    snType = latestMed.optString("specialNoticeType", "TEXT");
+                    snText = latestMed.optString("specialNoticeText", "");
+                    snAudioUrl = latestMed.optString("specialNoticeAudioUrl", "");
+                    snMaxCount = Math.max(1, latestMed.optInt("specialNoticeMaxCount", 5));
+                    snServerShown = Math.max(0, latestMed.optInt("specialNoticeShownCount", 0));
+                    snVersion = latestMed.optString("specialNoticeVersion", "1");
+                }
+
+                boolean isEmergencySos = finalLabel.contains("EMERGENCY SOS") || finalLabel.contains("SOS");
+                boolean isVoice = "VOICE".equalsIgnoreCase(snType);
+                boolean hasValidPayload = isVoice ? (snAudioUrl != null && !snAudioUrl.trim().isEmpty()) : (snText != null && !snText.trim().isEmpty());
+
+                int currentShown = AlarmScheduler.getSpecialNoticeShownCount(AlarmActivity.this, finalMedicationId, snVersion, snServerShown);
+
+                if (!isEmergencySos && snEnabled && hasValidPayload && currentShown < snMaxCount) {
+                    int newCount = AlarmScheduler.incrementSpecialNoticeShownCount(AlarmActivity.this, finalMedicationId, snVersion, currentShown);
+                    syncSpecialNoticeShownToServer(AlarmActivity.this, finalMedicationId, finalElderId, snVersion, newCount);
+
+                    String counterLabel = "📢 SPECIAL NOTICE • " + newCount + " OF " + snMaxCount;
+                    if (newCount >= snMaxCount) {
+                        counterLabel = counterLabel + " (FINAL)";
+                    }
+                    tvSpecialNoticeCounter.setText(counterLabel);
+
+                    String medDisplay = finalLabel;
+                    if (latestMed != null && !latestMed.optString("name", "").isEmpty()) {
+                        String n = latestMed.optString("name");
+                        String d = latestMed.optString("dosage", "");
+                        medDisplay = d.isEmpty() ? n : (n + " • " + d);
+                    }
+                    tvSpecialNoticeMed.setText(medDisplay);
+
+                    layoutAlarmControls.setVisibility(View.GONE);
+                    layoutSpecialNotice.setVisibility(View.VISIBLE);
+
+                    if (isVoice) {
+                        layoutNoticeTextBox.setVisibility(View.GONE);
+                        layoutNoticeVoiceBox.setVisibility(View.VISIBLE);
+                        final String finalAudioUrl = snAudioUrl;
+                        final String finalVersion = snVersion;
+                        btnReplaySpecialNotice.setOnClickListener(new View.OnClickListener() {
+                            @Override
+                            public void onClick(View btnView) {
+                                playSpecialNoticeVoice(finalMedicationId, finalAudioUrl, finalVersion, tvSpecialNoticeVoiceStatus);
+                            }
+                        });
+                        playSpecialNoticeVoice(finalMedicationId, snAudioUrl, snVersion, tvSpecialNoticeVoiceStatus);
+                    } else {
+                        layoutNoticeVoiceBox.setVisibility(View.GONE);
+                        layoutNoticeTextBox.setVisibility(View.VISIBLE);
+                        tvSpecialNoticeText.setText(snText);
+                    }
+
+                    btnCloseSpecialNotice.setOnClickListener(new View.OnClickListener() {
+                        @Override
+                        public void onClick(View closeView) {
+                            stopSpecialNoticeAudio();
+                            Toast.makeText(AlarmActivity.this, "✓ Medicine marked as taken!", Toast.LENGTH_SHORT).show();
+                            finish();
+                        }
+                    });
+                    return;
+                }
+
+                Toast.makeText(AlarmActivity.this, "✓ Medicine marked as taken!", Toast.LENGTH_SHORT).show();
                 finish();
             }
         };
@@ -356,6 +449,145 @@ public class AlarmActivity extends Activity {
 
         // 6. Start Single Continuous Sound and Aggressive Vibration
         startAlarmSoundAndVibration();
+    }
+
+    private void playSpecialNoticeVoice(final String medId, final String audioUrl, final String version, final TextView statusView) {
+        stopSpecialNoticeAudio();
+        final File localFile = AlarmScheduler.getSpecialNoticeAudioFile(this, medId);
+
+        if (AlarmScheduler.isSpecialNoticeAudioCached(this, medId, audioUrl, version)) {
+            playSpecialNoticeFromFile(localFile, statusView);
+            return;
+        }
+
+        if (statusView != null) {
+            statusView.setText("⏳ Loading voice message...");
+        }
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final boolean cached = AlarmScheduler.cacheSingleSpecialNoticeAudio(AlarmActivity.this, medId, audioUrl, version);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (isFinishing() || isDestroyed()) return;
+                        if (localFile.exists() && localFile.length() > 100) {
+                            playSpecialNoticeFromFile(localFile, statusView);
+                        } else {
+                            if (statusView != null) {
+                                statusView.setText("⚠️ Voice message could not load offline. Please check internet for first sync.");
+                            }
+                        }
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void playSpecialNoticeFromFile(File localFile, final TextView statusView) {
+        try {
+            stopSpecialNoticeAudio();
+            if (statusView != null) {
+                statusView.setText("🔊 Playing voice notice from your family...");
+            }
+            specialNoticePlayer = new MediaPlayer();
+            specialNoticePlayer.setDataSource(localFile.getAbsolutePath());
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                AudioAttributes attrs = new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build();
+                specialNoticePlayer.setAudioAttributes(attrs);
+            } else {
+                specialNoticePlayer.setAudioStreamType(AudioManager.STREAM_ALARM);
+            }
+            specialNoticePlayer.setLooping(false);
+            specialNoticePlayer.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
+                @Override
+                public void onCompletion(MediaPlayer mp) {
+                    if (statusView != null) {
+                        statusView.setText("✓ Voice notice finished. Tap Replay to hear again.");
+                    }
+                }
+            });
+            specialNoticePlayer.prepare();
+            specialNoticePlayer.start();
+        } catch (Exception e) {
+            Log.e(TAG, "Error playing special notice audio", e);
+            if (statusView != null) {
+                statusView.setText("⚠️ Unable to play voice file.");
+            }
+        }
+    }
+
+    private void stopSpecialNoticeAudio() {
+        try {
+            if (specialNoticePlayer != null) {
+                if (specialNoticePlayer.isPlaying()) specialNoticePlayer.stop();
+                specialNoticePlayer.release();
+                specialNoticePlayer = null;
+            }
+        } catch (Exception ignored) {}
+    }
+
+    /**
+     * Reports incremented special notice display count asynchronously to server and clears matching pending entry.
+     */
+    public static void syncSpecialNoticeShownToServer(final Context context, final String medId, final String elderId, final String version, final int shownCount) {
+        if (context == null || medId == null || medId.trim().isEmpty()) return;
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                HttpURLConnection conn = null;
+                try {
+                    URL url = new URL("https://eldersaath.vercel.app/api/medications/notice-shown");
+                    conn = (HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                    conn.setRequestProperty("x-app-alarm-secret", "ElderSaath-Hardware-Alarm-v1");
+
+                    try {
+                        String cookie = CookieManager.getInstance().getCookie("https://eldersaath.vercel.app");
+                        if (cookie != null && !cookie.isEmpty()) {
+                            conn.setRequestProperty("Cookie", cookie);
+                        }
+                    } catch (Exception ignored) {}
+
+                    conn.setConnectTimeout(10000);
+                    conn.setReadTimeout(10000);
+                    conn.setDoOutput(true);
+
+                    String ver = (version != null && !version.trim().isEmpty()) ? version.trim() : "1";
+                    JSONObject payload = new JSONObject();
+                    payload.put("medicationId", medId);
+                    if (elderId != null && !elderId.isEmpty()) {
+                        payload.put("elderId", elderId);
+                    }
+                    payload.put("version", ver);
+                    payload.put("shownCount", shownCount);
+
+                    OutputStream os = conn.getOutputStream();
+                    os.write(payload.toString().getBytes(StandardCharsets.UTF_8));
+                    os.flush();
+                    os.close();
+
+                    int code = conn.getResponseCode();
+                    Log.i(TAG, "Special notice shown count synced to server! HTTP Response: " + code);
+                    if (code >= 200 && code < 300) {
+                        SharedPreferences p = context.getSharedPreferences("ElderSaathAlarms", Context.MODE_PRIVATE);
+                        Set<String> pend = new HashSet<>(p.getStringSet("pending_special_notice_sync", new HashSet<String>()));
+                        pend.remove(medId + "|" + ver + "|" + shownCount);
+                        p.edit().putStringSet("pending_special_notice_sync", pend).apply();
+                    }
+                } catch (Exception e) {
+                    Log.w(TAG, "Offline or network error syncing special notice count (kept in pending phone memory): " + e.getMessage());
+                } finally {
+                    if (conn != null) conn.disconnect();
+                }
+            }
+        }).start();
     }
 
     /**
@@ -606,6 +838,7 @@ public class AlarmActivity extends Activity {
         alarmHandled = true;
         cancelAutoSnoozeTimer();
         stopAlarmAndSound();
+        stopSpecialNoticeAudio();
         if (currentInstance == this) {
             currentInstance = null;
         }

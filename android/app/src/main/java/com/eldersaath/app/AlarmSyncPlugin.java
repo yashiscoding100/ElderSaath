@@ -85,6 +85,54 @@ public class AlarmSyncPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void getPendingSpecialNoticeSync(PluginCall call) {
+        try {
+            SharedPreferences prefs = getContext().getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+            Set<String> pending = prefs.getStringSet("pending_special_notice_sync", new HashSet<String>());
+            JSArray items = new JSArray();
+            for (String entry : pending) {
+                String[] parts = entry.split("\\|");
+                if (parts.length >= 3) {
+                    try {
+                        JSObject obj = new JSObject();
+                        obj.put("medicationId", parts[0]);
+                        obj.put("version", parts[1]);
+                        obj.put("shownCount", Integer.parseInt(parts[2]));
+                        obj.put("entry", entry);
+                        items.put(obj);
+                    } catch (Exception ignored) {}
+                }
+            }
+            JSObject ret = new JSObject();
+            ret.put("items", items);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Error reading pending special notice sync: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void clearPendingSpecialNoticeSync(PluginCall call) {
+        try {
+            JSArray entries = call.getArray("entries");
+            if (entries != null && entries.length() > 0) {
+                SharedPreferences prefs = getContext().getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+                Set<String> pending = new HashSet<>(prefs.getStringSet("pending_special_notice_sync", new HashSet<String>()));
+                for (int i = 0; i < entries.length(); i++) {
+                    String e = entries.optString(i, null);
+                    if (e != null) pending.remove(e);
+                }
+                prefs.edit().putStringSet("pending_special_notice_sync", pending).apply();
+            }
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Error clearing pending special notice sync: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
     public void syncAlarmTone(PluginCall call) {
         try {
             boolean enabled = call.getBoolean("enabled", false);
