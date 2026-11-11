@@ -72,7 +72,11 @@ export function AddMedicineForm({ elderId }: { elderId: string }) {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        alert(err.message || "Failed to save medicine")
+        const msg =
+          res.status === 413
+            ? "Audio attachment is too large to save (max 2.8 MB). Please use a shorter audio clip."
+            : err.message || `Failed to save medicine (HTTP ${res.status})`
+        alert(msg)
         return
       }
 
@@ -84,6 +88,7 @@ export function AddMedicineForm({ elderId }: { elderId: string }) {
       setSpecialNotice(DEFAULT_NOTICE_STATE)
       router.refresh()
     } catch (error) {
+      alert(error instanceof Error ? error.message : "Network error while saving medicine")
       console.error(error)
     } finally {
       setLoading(false)

@@ -1,19 +1,81 @@
 package com.eldersaath.app;
 
+import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.PowerManager;
 import android.provider.Settings;
+import androidx.core.content.ContextCompat;
 import com.getcapacitor.JSObject;
+import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 
-@CapacitorPlugin(name = "AppPermissions")
+@CapacitorPlugin(
+    name = "AppPermissions",
+    permissions = {
+        @Permission(strings = { Manifest.permission.RECORD_AUDIO }, alias = "microphone")
+    }
+)
 public class PermissionsPlugin extends Plugin {
+
+    @PluginMethod
+    public void checkMicrophonePermission(PluginCall call) {
+        boolean declared = isPermissionDeclared("microphone");
+        boolean granted = ContextCompat.checkSelfPermission(getContext(), Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+        PermissionState state = getPermissionState("microphone");
+        String status = !declared ? "undeclared" : (granted ? "granted" : (state != null ? state.toString() : "prompt"));
+
+        JSObject ret = new JSObject();
+        ret.put("granted", granted);
+        ret.put("declared", declared);
+        ret.put("status", status);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void requestMicrophonePermission(PluginCall call) {
+        if (!isPermissionDeclared("microphone")) {
+            JSObject ret = new JSObject();
+            ret.put("granted", false);
+            ret.put("declared", false);
+            ret.put("status", "undeclared");
+            call.resolve(ret);
+            return;
+        }
+
+        boolean alreadyGranted = ContextCompat.checkSelfPermission(getContext(), Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+        if (alreadyGranted) {
+            JSObject ret = new JSObject();
+            ret.put("granted", true);
+            ret.put("declared", true);
+            ret.put("status", "granted");
+            call.resolve(ret);
+            return;
+        }
+
+        requestPermissionForAlias("microphone", call, "microphonePermissionCallback");
+    }
+
+    @PermissionCallback
+    private void microphonePermissionCallback(PluginCall call) {
+        boolean granted = ContextCompat.checkSelfPermission(getContext(), Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+        PermissionState state = getPermissionState("microphone");
+        String status = granted ? "granted" : (state != null ? state.toString() : "denied");
+
+        JSObject ret = new JSObject();
+        ret.put("granted", granted);
+        ret.put("declared", true);
+        ret.put("status", status);
+        call.resolve(ret);
+    }
 
     @PluginMethod
     public void checkOverlayPermission(PluginCall call) {

@@ -118,12 +118,19 @@ export function EditMedicineModal({ med }: { med: MedicationItem }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       })
-      if (!res.ok) throw new Error("Failed to update medication")
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        const msg =
+          res.status === 413
+            ? "Audio attachment is too large to save (max 2.8 MB). Please use a shorter audio clip."
+            : err.message || `Failed to update medication (HTTP ${res.status})`
+        throw new Error(msg)
+      }
       setIsOpen(false)
       window.dispatchEvent(new Event("eldersaath:refresh-medications"))
       router.refresh()
     } catch (error) {
-      alert("Error updating medication")
+      alert(error instanceof Error ? error.message : "Error updating medication")
       console.error(error)
     } finally {
       setLoading(false)

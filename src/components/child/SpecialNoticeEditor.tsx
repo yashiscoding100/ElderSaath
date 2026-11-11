@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { Mic, Square, Upload, Volume2, FileText, RotateCcw, Loader2, Trash2 } from "lucide-react"
+import { Capacitor, registerPlugin } from "@capacitor/core"
+import { Mic, Square, Upload, Volume2, FileText, RotateCcw, Loader2, Trash2, Settings } from "lucide-react"
 
 export interface SpecialNoticeState {
   enabled: boolean
@@ -14,7 +15,24 @@ export interface SpecialNoticeState {
   resetCount?: boolean
 }
 
-function encodeWavFromFloat32(samples: Float32Array, sourceSampleRate: number): Blob {
+interface MicPermissionResult {
+  granted?: boolean
+  declared?: boolean
+  status?: string
+}
+
+interface AppPermissionsPlugin {
+  requestMicrophonePermission?: () => Promise<MicPermissionResult>
+  openAppSettings?: () => Promise<void>
+}
+
+const AppPermissions = registerPlugin<AppPermissionsPlugin>("AppPermissions")
+
+// Stay safely below Vercel's 4.5 MB limit even when base64-encoded inside JSON (~1.34x overhead)
+const MAX_RAW_AUDIO_BYTES = Math.floor(2.8 * 1024 * 1024)
+const MAX_CLIENT_DECODE_BYTES = 25 * 1024 * 1024
+
+function encodeWavFromFloat32(samples: Float32Array, sourceSampleRate: number): Uint8Array {
   // Downsample to 16 kHz mono PCM for compact size (~32 KB/sec) & universal Android MediaPlayer support
   const targetSampleRate = 16000
   const ratio = sourceSampleRate / targetSampleRate
@@ -52,7 +70,99 @@ function encodeWavFromFloat32(samples: Float32Array, sourceSampleRate: number): 
     view.setInt16(offset, pcm[i], true)
   }
 
-  return new Blob([view], { type: "audio/wav" })
+  return new Uint8Array(buffer)
+}
+
+function normalizeAudioMime(rawMime: string | undefined, filename: string): string {
+  const clean = (rawMime || "").split(";")[0].trim().toLowerCase()
+  if (clean.startsWith("audio/")) {
+    if (clean === "audio/mp3") return "audio/mpeg"
+    if (clean === "audio/x-wav" || clean === "audio/wave") return "audio/wav"
+    if (clean === "audio/x-m4a") return "audio/mp4"
+    return clean
+  }
+  const lower = filename.toLowerCase()
+  if (lower.endsWith(".wav")) return "audio/wav"
+  if (lower.endsWith(".ogg") || lower.endsWith(".opus")) return "audio/ogg"
+  if (lower.endsWith(".m4a") || lower.endsWith(".mp4")) return "audio/mp4"
+  if (lower.endsWith(".aac")) return "audio/aac"
+  if (lower.endsWith(".webm")) return "audio/webm"
+  if (lower.endsWith(".3gp")) return "audio/3gpp"
+  if (lower.endsWith(".amr")) return "audio/amr"
+  if (lower.endsWith(".flac")) return "audio/flac"
+  return "audio/mpeg"
+}
+
+function readFileBytes(file: File): Promise<ArrayBuffer> {
+  if (typeof file.arrayBuffer === "function") {
+    return file.arrayBuffer().catch(() => {
+      return new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          if (reader.result instanceof ArrayBuffer) resolve(reader.result)
+          else reject(new Error("Could not read audio bytes"))
+        }
+        reader.onerror = () => reject(reader.error || new Error("Failed to read audio file"))
+        reader.readAsArrayBuffer(file)
+      })
+    })
+  }
+  return new Promise<ArrayBuffer>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (reader.result instanceof ArrayBuffer) resolve(reader.result)
+      else reject(new Error("Could not read audio bytes"))
+    }
+    reader.onerror = () => reject(reader.error || new Error("Failed to read audio file"))
+    reader.readAsArrayBuffer(file)
+  })
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === "string") resolve(reader.result)
+      else reject(new Error("Could not encode audio file"))
+    }
+    reader.onerror = () => reject(reader.error || new Error("Failed to encode audio data"))
+    reader.readAsDataURL(blob)
+  })
+}
+
+async function compactAudioToWavIfPossible(rawBuffer: ArrayBuffer, originalName: string): Promise<{ bytes: Uint8Array; filename: string; mimeType: string } | null> {
+  if (rawBuffer.byteLength > MAX_CLIENT_DECODE_BYTES) return null
+  const AudioCtx =
+    window.AudioContext ||
+    (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  if (!AudioCtx) return null
+
+  const ctx = new AudioCtx()
+  try {
+    const decoded = await ctx.decodeAudioData(rawBuffer.slice(0))
+    const length = decoded.length
+    const channelCount = Math.max(1, decoded.numberOfChannels)
+    const mono = new Float32Array(length)
+    for (let ch = 0; ch < channelCount; ch++) {
+      const chData = decoded.getChannelData(ch)
+      for (let i = 0; i < length; i++) {
+        mono[i] += chData[i] / channelCount
+      }
+    }
+    const wavBytes = encodeWavFromFloat32(mono, decoded.sampleRate)
+    const baseName = originalName.replace(/\.[^/.]+$/, "") || "voice-notice"
+    return {
+      bytes: wavBytes,
+      filename: `${baseName}.wav`,
+      mimeType: "audio/wav"
+    }
+  } catch {
+    return null
+  } finally {
+    try {
+      await ctx.close()
+    } catch {}
+  }
 }
 
 export function SpecialNoticeEditor({
@@ -69,9 +179,17 @@ export function SpecialNoticeEditor({
   const [recording, setRecording] = useState(false)
   const [recordSeconds, setRecordSeconds] = useState(0)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [showOpenSettings, setShowOpenSettings] = useState(false)
 
   const recordCleanupRef = useRef<(() => void) | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const latestValueRef = useRef(value)
+  const latestOnChangeRef = useRef(onChange)
+  useEffect(() => {
+    latestValueRef.current = value
+    latestOnChangeRef.current = onChange
+  }, [value, onChange])
 
   useEffect(() => {
     return () => {
@@ -80,45 +198,142 @@ export function SpecialNoticeEditor({
     }
   }, [])
 
-  const uploadAudioBlob = async (file: File) => {
+  const uploadAudioBytes = async (rawBytes: Uint8Array, filename: string, mimeType: string) => {
     setUploading(true)
     setErrorMsg(null)
+    setShowOpenSettings(false)
     try {
-      const fd = new FormData()
-      fd.append("file", file)
+      if (rawBytes.byteLength === 0) {
+        throw new Error("Selected audio file is empty (0 bytes).")
+      }
+
+      const safeMime = normalizeAudioMime(mimeType, filename)
+      const safeName = filename || "voice-notice.wav"
+      const arrayBuf = rawBytes.buffer.slice(rawBytes.byteOffset, rawBytes.byteOffset + rawBytes.byteLength) as ArrayBuffer
+      const dataUrl = await blobToDataUrl(new Blob([arrayBuf], { type: safeMime }))
+
       const res = await fetch("/api/medications/notice-upload", {
         method: "POST",
-        body: fd
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: safeName,
+          mimeType: safeMime,
+          dataUrl
+        })
       })
-      const data = await res.json().catch(() => ({}))
+
+      const rawText = await res.text()
+      let data: { url?: string; filename?: string; message?: string } = {}
+      try {
+        data = JSON.parse(rawText) as { url?: string; filename?: string; message?: string }
+      } catch {}
+
       if (!res.ok || !data.url) {
-        throw new Error(data.message || "Audio upload failed")
+        if (res.status === 413) {
+          throw new Error("Audio file is too large for upload (max 2.8 MB). Please choose or record a shorter voice note.")
+        }
+        const detail = data.message || (rawText && !rawText.startsWith("<") ? rawText.slice(0, 140) : `HTTP ${res.status}`)
+        throw new Error(detail || "Audio upload failed")
       }
-      onChange({
-        ...value,
+
+      latestOnChangeRef.current({
+        ...latestValueRef.current,
         type: "VOICE",
         audioUrl: data.url,
-        audioName: data.filename || file.name
+        audioName: data.filename || safeName
       })
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : "Failed to upload audio")
     } finally {
       setUploading(false)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ""
+      }
     }
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    e.target.value = ""
-    if (file) {
-      uploadAudioBlob(file)
+    if (!file) return
+
+    setUploading(true)
+    setErrorMsg(null)
+    setShowOpenSettings(false)
+
+    try {
+      // Read bytes BEFORE resetting the file input so Android WebView content:// URIs never get invalidated
+      const rawBuffer = await readFileBytes(file)
+      if (rawBuffer.byteLength === 0) {
+        throw new Error("Could not read audio file (0 bytes). Try saving the file to Downloads and selecting it again.")
+      }
+
+      let uploadBytes: Uint8Array = new Uint8Array(rawBuffer)
+      let uploadName = file.name || "voice-notice.mp3"
+      let uploadMime = normalizeAudioMime(file.type, uploadName)
+
+      if (uploadBytes.byteLength > MAX_RAW_AUDIO_BYTES) {
+        const compacted = await compactAudioToWavIfPossible(rawBuffer, uploadName)
+        if (compacted && compacted.bytes.byteLength <= MAX_RAW_AUDIO_BYTES) {
+          uploadBytes = compacted.bytes
+          uploadName = compacted.filename
+          uploadMime = compacted.mimeType
+        } else {
+          const mb = (rawBuffer.byteLength / (1024 * 1024)).toFixed(1)
+          throw new Error(`Audio file is ${mb} MB (max 2.8 MB / ~90s). Please upload a shorter clip or use Record Voice.`)
+        }
+      }
+
+      await uploadAudioBytes(uploadBytes, uploadName, uploadMime)
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : "Failed to read or upload audio file")
+      setUploading(false)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ""
+      }
     }
+  }
+
+  const handleOpenSettings = async () => {
+    try {
+      await AppPermissions.openAppSettings?.()
+    } catch {}
   }
 
   const startRecording = async () => {
     setErrorMsg(null)
+    setShowOpenSettings(false)
+
+    const isNative = Capacitor.isNativePlatform()
+
+    if (isNative) {
+      try {
+        if (typeof AppPermissions.requestMicrophonePermission === "function") {
+          const perm = await AppPermissions.requestMicrophonePermission()
+          if (perm && perm.declared === false) {
+            setErrorMsg(
+              "Microphone permission is not enabled in this installed Android APK. Please install the updated ElderSaath APK or use Upload Audio."
+            )
+            return
+          }
+          if (perm && perm.granted === false) {
+            setShowOpenSettings(true)
+            setErrorMsg(
+              "Microphone permission was denied. Tap 'Open App Settings' below, allow Microphone access, and try again."
+            )
+            return
+          }
+        }
+      } catch (permErr: unknown) {
+        const permMsg = permErr instanceof Error ? permErr.message : String(permErr)
+        if (!/not implemented|unimplemented/i.test(permMsg)) {
+          console.warn("[SpecialNoticeEditor] requestMicrophonePermission warning:", permMsg)
+        }
+      }
+    }
+
     if (!navigator?.mediaDevices?.getUserMedia) {
-      setErrorMsg("Microphone recording is not available in this browser. Please upload an audio file instead.")
+      setErrorMsg("Microphone recording is not available in this browser. Please use Upload Audio instead.")
       return
     }
 
@@ -133,8 +348,15 @@ export function SpecialNoticeEditor({
         return
       }
       const audioCtx = new AudioCtx()
+      if (audioCtx.state === "suspended") {
+        await audioCtx.resume().catch(() => {})
+      }
+
       const source = audioCtx.createMediaStreamSource(stream)
       const processor = audioCtx.createScriptProcessor(4096, 1, 1)
+      const zeroGain = audioCtx.createGain()
+      zeroGain.gain.value = 0
+
       const chunks: Float32Array[] = []
       let totalLength = 0
 
@@ -144,10 +366,13 @@ export function SpecialNoticeEditor({
         copy.set(input)
         chunks.push(copy)
         totalLength += copy.length
+        const out = ev.outputBuffer.getChannelData(0)
+        out.fill(0)
       }
 
       source.connect(processor)
-      processor.connect(audioCtx.destination)
+      processor.connect(zeroGain)
+      zeroGain.connect(audioCtx.destination)
 
       setRecording(true)
       setRecordSeconds(0)
@@ -161,29 +386,54 @@ export function SpecialNoticeEditor({
           timerRef.current = null
         }
         try { processor.disconnect() } catch {}
+        try { zeroGain.disconnect() } catch {}
         try { source.disconnect() } catch {}
         try { stream.getTracks().forEach(t => t.stop()) } catch {}
         const sampleRate = audioCtx.sampleRate || 44100
         try { audioCtx.close() } catch {}
 
-        if (totalLength > 0) {
-          const merged = new Float32Array(totalLength)
-          let pos = 0
-          for (const c of chunks) {
-            merged.set(c, pos)
-            pos += c.length
-          }
-          const wavBlob = encodeWavFromFloat32(merged, sampleRate)
-          const wavFile = new File([wavBlob], `voice-notice-${Date.now()}.wav`, { type: "audio/wav" })
-          uploadAudioBlob(wavFile)
+        if (totalLength === 0) {
+          setErrorMsg("No audio captured. Please hold for at least 1 second and ensure Microphone access is allowed.")
+          return
         }
+
+        const merged = new Float32Array(totalLength)
+        let pos = 0
+        for (const c of chunks) {
+          merged.set(c, pos)
+          pos += c.length
+        }
+        const wavBytes = encodeWavFromFloat32(merged, sampleRate)
+        if (wavBytes.byteLength > MAX_RAW_AUDIO_BYTES) {
+          setErrorMsg("Recorded clip is longer than ~90 seconds (max 2.8 MB). Please record a shorter voice notice.")
+          return
+        }
+        void uploadAudioBytes(wavBytes, `voice-notice-${Date.now()}.wav`, "audio/wav")
       }
     } catch (err: unknown) {
-      setErrorMsg(
-        err instanceof Error
-          ? err.message
-          : "Could not access microphone. Please allow microphone permission or upload an audio file."
-      )
+      const errName = err instanceof Error ? err.name : ""
+      const errText = err instanceof Error ? err.message : String(err)
+      const isDenied =
+        errName === "NotAllowedError" ||
+        errName === "PermissionDeniedError" ||
+        /permission denied|not allowed/i.test(errText)
+
+      if (isDenied) {
+        if (isNative) {
+          setShowOpenSettings(true)
+          setErrorMsg(
+            "Microphone permission denied on this device. Tap 'Open App Settings' to enable Microphone (or update the ElderSaath APK if Microphone is not listed)."
+          )
+        } else {
+          setErrorMsg(
+            "Microphone permission denied in browser. Allow Microphone permission in site settings or upload an audio file instead."
+          )
+        }
+      } else {
+        setErrorMsg(
+          errText || "Could not access microphone. Please allow microphone permission or upload an audio file."
+        )
+      }
     }
   }
 
@@ -264,7 +514,11 @@ export function SpecialNoticeEditor({
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => onChange({ ...value, type: "TEXT" })}
+                onClick={() => {
+                  setErrorMsg(null)
+                  setShowOpenSettings(false)
+                  onChange({ ...value, type: "TEXT" })
+                }}
                 className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border text-xs font-bold transition ${
                   value.type === "TEXT"
                     ? "bg-amber-600 text-white border-amber-600 shadow-sm"
@@ -276,7 +530,11 @@ export function SpecialNoticeEditor({
               </button>
               <button
                 type="button"
-                onClick={() => onChange({ ...value, type: "VOICE" })}
+                onClick={() => {
+                  setErrorMsg(null)
+                  setShowOpenSettings(false)
+                  onChange({ ...value, type: "VOICE" })
+                }}
                 className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border text-xs font-bold transition ${
                   value.type === "VOICE"
                     ? "bg-amber-600 text-white border-amber-600 shadow-sm"
@@ -312,7 +570,7 @@ export function SpecialNoticeEditor({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac"
+                accept="audio/*,.mp3,.wav,.ogg,.opus,.m4a,.aac,.3gp,.amr,.webm,.flac"
                 className="hidden"
                 onChange={handleFileChange}
               />
@@ -351,9 +609,19 @@ export function SpecialNoticeEditor({
               </div>
 
               {errorMsg && (
-                <p className="text-[11px] text-rose-700 font-semibold bg-rose-50 border border-rose-200 p-2 rounded-lg">
-                  {errorMsg}
-                </p>
+                <div className="text-[11px] text-rose-700 font-semibold bg-rose-50 border border-rose-200 p-2.5 rounded-lg space-y-2">
+                  <p>{errorMsg}</p>
+                  {showOpenSettings && (
+                    <button
+                      type="button"
+                      onClick={handleOpenSettings}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-md font-bold text-[11px] transition"
+                    >
+                      <Settings className="w-3 h-3" />
+                      <span>Open App Settings</span>
+                    </button>
+                  )}
+                </div>
               )}
 
               {value.audioUrl && (
@@ -376,7 +644,7 @@ export function SpecialNoticeEditor({
               )}
               {value.enabled && value.type === "VOICE" && !value.audioUrl && !uploading && (
                 <p className="text-[11px] text-amber-800 font-medium">
-                  Please upload an audio file (MP3, WAV, M4A, OGG) or record a voice notice above.
+                  Please upload an audio file (MP3, WAV, M4A, OGG — max 2.8 MB) or record a voice notice above.
                 </p>
               )}
             </div>
