@@ -1,4 +1,5 @@
 export const dynamic = 'force-dynamic';
+import Link from "next/link"
 import { prisma } from "@/lib/prisma"
 import { UserRow } from "./UserRow"
 import { CreateUserModal } from "./CreateUserModal"
@@ -14,8 +15,14 @@ export default async function AdminUsersPage() {
     <div className="max-w-5xl mx-auto space-y-8">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-black text-slate-900 tracking-tight">User Management</h2>
-          <p className="text-slate-500 mt-2">View and manage all registered accounts.</p>
+          <h2 className="text-3xl font-black text-slate-900 tracking-tight">Users</h2>
+          <p className="text-slate-500 mt-2">
+            View accounts, create users, reset passwords, or block/delete users. Configure Auto-Snooze and per-account settings in{" "}
+            <Link href="/admin/user-management" className="text-violet-600 font-bold hover:underline">
+              User Management
+            </Link>
+            .
+          </p>
         </div>
         <div className="flex gap-3">
           <BroadcastButton />

@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation"
 import { EditUserModal } from "./EditUserModal"
 import { NotificationModal } from "./NotificationModal"
 import { ChangePasswordModal } from "./ChangePasswordModal"
-import { AutoSnoozeModal } from "./AutoSnoozeModal"
 import { getImpersonationSecret } from "../actions"
 import { signIn } from "next-auth/react"
 
@@ -17,9 +16,6 @@ type User = {
   createdAt: Date
   isBlocked?: boolean
   blockMessage?: string | null
-  autoSnoozeEnabled?: boolean
-  autoSnoozeAfterSeconds?: number
-  alarmSnoozeDuration?: number | null
 }
 
 export function UserRow({ user }: { user: User }) {
@@ -42,8 +38,8 @@ export function UserRow({ user }: { user: User }) {
       window.open("/dashboard", "_blank")
       // Force reload the current tab so the admin doesn't accidentally edit things using the new user's cookie
       window.location.reload()
-    } catch (err: any) {
-      alert(err.message || "Failed to impersonate")
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Failed to impersonate")
       setLoading(false)
     }
   }
@@ -65,7 +61,7 @@ export function UserRow({ user }: { user: User }) {
       } else {
         alert("Failed to delete user")
       }
-    } catch (e) {
+    } catch {
       alert("Error deleting user")
     } finally {
       setLoading(false)
@@ -122,7 +118,6 @@ export function UserRow({ user }: { user: User }) {
       <td className="p-4 text-right flex justify-end gap-2 items-center flex-wrap">
         {user.role !== "ADMIN" && (
           <>
-            <AutoSnoozeModal user={user} />
             <ChangePasswordModal user={user} />
             <button 
               onClick={handleTestAlarm}

@@ -1,7 +1,7 @@
 import { auth } from "@/auth"
 import { redirect } from "next/navigation"
-import Link from "next/link"
 import { LogoutButton } from "@/components/LogoutButton"
+import { AdminNav } from "./AdminNav"
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
@@ -19,20 +19,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <p className="text-slate-400 text-sm mt-1">ElderSaath Management</p>
         </div>
         
-        <nav className="flex-1 px-4 py-4 space-y-2">
-          <Link href="/admin" className="block px-4 py-3 rounded-lg hover:bg-slate-800 hover:text-white transition font-medium">
-            📊 Overview
-          </Link>
-          <Link href="/admin/users" className="block px-4 py-3 rounded-lg hover:bg-slate-800 hover:text-white transition font-medium">
-            👥 Users
-          </Link>
-          <Link href="/admin/links" className="block px-4 py-3 rounded-lg hover:bg-slate-800 hover:text-white transition font-medium">
-            🔗 Connections
-          </Link>
-          <Link href="/admin/notices" className="block px-4 py-3 rounded-lg hover:bg-slate-800 hover:text-white transition font-medium">
-            📢 Notices & Startup Media
-          </Link>
-        </nav>
+        <AdminNav />
 
         <div className="p-4 border-t border-slate-800">
           <div className="flex items-center justify-between px-4 py-2">

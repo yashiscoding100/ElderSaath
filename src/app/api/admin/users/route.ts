@@ -4,11 +4,11 @@ import { prisma } from "@/lib/prisma"
 import bcrypt from "bcryptjs"
 import { sendSilentAlarmSchedulePush } from "@/lib/alarmSync"
 
-export const dynamic = 'force-dynamic'
+export const dynamic = "force-dynamic"
 
 export async function DELETE(req: Request) {
   const session = await auth()
-  
+
   if (!session || session.user.role !== "ADMIN") {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 })
   }
@@ -30,20 +30,36 @@ export async function DELETE(req: Request) {
     })
 
     return NextResponse.json({ message: "User deleted" }, { status: 200 })
-  } catch (error) {
+  } catch {
     return NextResponse.json({ message: "Failed to delete user" }, { status: 500 })
   }
 }
 
 export async function PATCH(req: Request) {
   const session = await auth()
-  
+
   if (!session || session.user.role !== "ADMIN") {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 })
   }
 
   try {
-    const { id, isBlocked, blockMessage, name, role, autoSnoozeEnabled, autoSnoozeAfterSeconds } = await req.json()
+    const body = await req.json()
+    const {
+      id,
+      isBlocked,
+      blockMessage,
+      name,
+      role,
+      autoSnoozeEnabled,
+      autoSnoozeAfterSeconds,
+      alarmSnoozeDuration,
+      alarmSnoozeText,
+      sosEnabled,
+      canManageMeds,
+      notifyVitals,
+      notifySnooze,
+      stickyAlarmNotification
+    } = body
 
     if (!id) {
       return NextResponse.json({ message: "User ID is required" }, { status: 400 })
@@ -53,31 +69,82 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ message: "Cannot block yourself" }, { status: 400 })
     }
 
-    const updateData: any = {}
+    const updateData: {
+      isBlocked?: boolean
+      blockMessage?: string | null
+      name?: string
+      role?: string
+      autoSnoozeEnabled?: boolean
+      autoSnoozeAfterSeconds?: number
+      alarmSnoozeDuration?: number
+      alarmSnoozeText?: string
+      sosEnabled?: boolean
+      canManageMeds?: boolean
+      notifyVitals?: boolean
+      notifySnooze?: boolean
+    } = {}
+
     if (isBlocked !== undefined) {
-      updateData.isBlocked = isBlocked
-      updateData.blockMessage = isBlocked ? blockMessage : null
+      updateData.isBlocked = Boolean(isBlocked)
+      updateData.blockMessage = isBlocked ? (blockMessage ? String(blockMessage) : null) : null
     }
-    if (name !== undefined) updateData.name = name
-    if (role !== undefined) updateData.role = role
+    if (name !== undefined) updateData.name = String(name)
+    if (role !== undefined) updateData.role = String(role)
     if (autoSnoozeEnabled !== undefined) {
       updateData.autoSnoozeEnabled = Boolean(autoSnoozeEnabled)
     }
     if (autoSnoozeAfterSeconds !== undefined) {
       const parsedSec = Number(autoSnoozeAfterSeconds)
       if (!Number.isFinite(parsedSec) || parsedSec < 5 || parsedSec > 3600) {
-        return NextResponse.json({ message: "Auto-snooze time must be between 5 seconds and 60 minutes (3600s)" }, { status: 400 })
+        return NextResponse.json(
+          { message: "Auto-snooze time must be between 5 seconds and 60 minutes (3600s)" },
+          { status: 400 }
+        )
       }
       updateData.autoSnoozeAfterSeconds = Math.round(parsedSec)
     }
+    if (alarmSnoozeDuration !== undefined) {
+      const parsedMin = Number(alarmSnoozeDuration)
+      if (!Number.isFinite(parsedMin) || parsedMin < 1 || parsedMin > 180) {
+        return NextResponse.json(
+          { message: "Snooze interval must be between 1 and 180 minutes" },
+          { status: 400 }
+        )
+      }
+      updateData.alarmSnoozeDuration = Math.round(parsedMin)
+    }
+    if (alarmSnoozeText !== undefined) {
+      const trimmed = String(alarmSnoozeText).trim().slice(0, 80)
+      updateData.alarmSnoozeText = trimmed || "Take later"
+    }
+    if (sosEnabled !== undefined) updateData.sosEnabled = Boolean(sosEnabled)
+    if (canManageMeds !== undefined) updateData.canManageMeds = Boolean(canManageMeds)
+    if (notifyVitals !== undefined) updateData.notifyVitals = Boolean(notifyVitals)
+    if (notifySnooze !== undefined) updateData.notifySnooze = Boolean(notifySnooze)
 
-    await prisma.user.update({
-      where: { id },
-      data: updateData
-    })
+    if (Object.keys(updateData).length > 0) {
+      await prisma.user.update({
+        where: { id },
+        data: updateData
+      })
+    }
+
+    if (stickyAlarmNotification !== undefined) {
+      await prisma.elderProfile.upsert({
+        where: { userId: id },
+        update: { stickyAlarmNotification: Boolean(stickyAlarmNotification) },
+        create: { userId: id, stickyAlarmNotification: Boolean(stickyAlarmNotification) }
+      })
+    }
 
     // Immediately sync updated alarm & auto-snooze configuration to the user's phone memory via silent FCM
-    if (autoSnoozeEnabled !== undefined || autoSnoozeAfterSeconds !== undefined) {
+    if (
+      autoSnoozeEnabled !== undefined ||
+      autoSnoozeAfterSeconds !== undefined ||
+      alarmSnoozeDuration !== undefined ||
+      alarmSnoozeText !== undefined ||
+      stickyAlarmNotification !== undefined
+    ) {
       await sendSilentAlarmSchedulePush(id).catch(() => {})
     }
 
@@ -90,7 +157,7 @@ export async function PATCH(req: Request) {
 
 export async function POST(req: Request) {
   const session = await auth()
-  
+
   if (!session || session.user.role !== "ADMIN") {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 })
   }
@@ -121,8 +188,11 @@ export async function POST(req: Request) {
       }
     })
 
-    return NextResponse.json({ message: "Account created successfully", user: { id: user.id, email: user.email } }, { status: 201 })
-  } catch (error) {
+    return NextResponse.json(
+      { message: "Account created successfully", user: { id: user.id, email: user.email } },
+      { status: 201 }
+    )
+  } catch {
     return NextResponse.json({ message: "Failed to create account" }, { status: 500 })
   }
 }
