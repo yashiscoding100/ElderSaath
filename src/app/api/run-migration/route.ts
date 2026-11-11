@@ -8,6 +8,8 @@ export async function GET(req: Request) {
     // Add columns manually to bypass the need for npx prisma db push on Vercel
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "sosEnabled" BOOLEAN NOT NULL DEFAULT false;`)
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "canManageMeds" BOOLEAN NOT NULL DEFAULT false;`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "autoSnoozeEnabled" BOOLEAN NOT NULL DEFAULT false;`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "autoSnoozeAfterSeconds" INTEGER NOT NULL DEFAULT 60;`)
     
     // Add Task columns
     await prisma.$executeRawUnsafe(`ALTER TABLE "Task" ADD COLUMN IF NOT EXISTS "time" TEXT;`)

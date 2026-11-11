@@ -34,6 +34,27 @@ public class MyMessagingService extends MessagingService {
             } else {
                 AlarmScheduler.rescheduleAll(this);
             }
+
+            // Persist child snooze & admin auto-snooze configuration into phone memory
+            if (remoteMessage.getData().containsKey("autoSnoozeEnabled") ||
+                remoteMessage.getData().containsKey("alarmSnoozeDuration")) {
+                String syncElderId = remoteMessage.getData().get("elderId");
+                String syncSnoozeText = remoteMessage.getData().get("alarmSnoozeText");
+                int syncSnoozeDur = 10;
+                try {
+                    String sDur = remoteMessage.getData().get("alarmSnoozeDuration");
+                    if (sDur != null) syncSnoozeDur = Integer.parseInt(sDur);
+                } catch (Exception ignored) {}
+                boolean syncAutoEnabled = "true".equalsIgnoreCase(remoteMessage.getData().get("autoSnoozeEnabled"));
+                int syncAutoSec = 60;
+                try {
+                    String sAutoSec = remoteMessage.getData().get("autoSnoozeAfterSeconds");
+                    if (sAutoSec != null) syncAutoSec = Integer.parseInt(sAutoSec);
+                } catch (Exception ignored) {}
+                boolean syncSticky = !"false".equalsIgnoreCase(remoteMessage.getData().get("stickyAlarmNotification"));
+
+                AlarmScheduler.saveAlarmSettings(this, syncElderId, syncSnoozeText, syncSnoozeDur, syncAutoEnabled, syncAutoSec, syncSticky);
+            }
             return;
         }
 
@@ -136,6 +157,17 @@ public class MyMessagingService extends MessagingService {
             if (snoozeText == null) snoozeText = "I'll take the medicines later";
             if (actionText == null) actionText = "TAKE MEDICINE / STOP ALARM";
 
+            boolean autoSnoozeEnabled = AlarmScheduler.isAutoSnoozeEnabled(this, elderId);
+            if (remoteMessage.getData().containsKey("autoSnoozeEnabled")) {
+                autoSnoozeEnabled = "true".equalsIgnoreCase(remoteMessage.getData().get("autoSnoozeEnabled"));
+            }
+            int autoSnoozeAfterSeconds = AlarmScheduler.getAutoSnoozeAfterSeconds(this, elderId);
+            if (remoteMessage.getData().containsKey("autoSnoozeAfterSeconds")) {
+                try {
+                    autoSnoozeAfterSeconds = Math.max(5, Integer.parseInt(remoteMessage.getData().get("autoSnoozeAfterSeconds")));
+                } catch (Exception ignored) {}
+            }
+
             try {
                 // 1. FORCE THE CPU AND SCREEN AWAKE
                 PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
@@ -144,7 +176,10 @@ public class MyMessagingService extends MessagingService {
                         PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE, 
                         "ElderSaath::HyperAlarmWakeLock"
                     );
-                    wakeLock.acquire(3 * 60 * 1000L); // 3 minutes
+                    long wakeMs = autoSnoozeEnabled
+                        ? Math.min(30 * 60 * 1000L, Math.max(3 * 60 * 1000L, (autoSnoozeAfterSeconds + 30L) * 1000L))
+                        : 3 * 60 * 1000L;
+                    wakeLock.acquire(wakeMs);
                 }
                 
                 // 2. High-Priority Alarm Notification Channel (Silent on Notification Channel so only AlarmActivity plays audio!)
@@ -178,6 +213,8 @@ public class MyMessagingService extends MessagingService {
                 fullScreenIntent.putExtra("snoozeText", snoozeText);
                 fullScreenIntent.putExtra("actionText", actionText);
                 fullScreenIntent.putExtra("snoozeDuration", snoozeDuration);
+                fullScreenIntent.putExtra("autoSnoozeEnabled", autoSnoozeEnabled);
+                fullScreenIntent.putExtra("autoSnoozeAfterSeconds", autoSnoozeAfterSeconds);
                 boolean showSticky = true;
                 if (remoteMessage.getData().containsKey("stickyNotification")) {
                     if ("false".equals(remoteMessage.getData().get("stickyNotification"))) showSticky = false;

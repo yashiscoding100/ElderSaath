@@ -70,14 +70,67 @@ export async function getUnifiedElderAlarms(elderId: string): Promise<UnifiedAla
   }
 }
 
+export async function getElderAlarmSettings(elderId: string) {
+  if (!elderId) {
+    return {
+      alarmSnoozeText: "Take later",
+      alarmSnoozeDuration: 10,
+      autoSnoozeEnabled: false,
+      autoSnoozeAfterSeconds: 60,
+      stickyAlarmNotification: true
+    }
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: elderId },
+      select: {
+        alarmSnoozeText: true,
+        alarmSnoozeDuration: true,
+        autoSnoozeEnabled: true,
+        autoSnoozeAfterSeconds: true,
+        elderProfile: {
+          select: { stickyAlarmNotification: true }
+        }
+      }
+    })
+
+    return {
+      alarmSnoozeText: user?.alarmSnoozeText || "Take later",
+      alarmSnoozeDuration: user?.alarmSnoozeDuration ?? 10,
+      autoSnoozeEnabled: user?.autoSnoozeEnabled ?? false,
+      autoSnoozeAfterSeconds: user?.autoSnoozeAfterSeconds ?? 60,
+      stickyAlarmNotification: user?.elderProfile?.stickyAlarmNotification !== false
+    }
+  } catch (err) {
+    console.warn("[getElderAlarmSettings] Error:", err)
+    return {
+      alarmSnoozeText: "Take later",
+      alarmSnoozeDuration: 10,
+      autoSnoozeEnabled: false,
+      autoSnoozeAfterSeconds: 60,
+      stickyAlarmNotification: true
+    }
+  }
+}
+
 export async function sendSilentAlarmSchedulePush(elderId: string) {
   if (!elderId) return
 
   try {
-    const items = await getUnifiedElderAlarms(elderId)
+    const [items, settings] = await Promise.all([
+      getUnifiedElderAlarms(elderId),
+      getElderAlarmSettings(elderId)
+    ])
     await sendPushNotification(elderId, {
       type: "SYNC_MEDICATIONS",
-      medications: JSON.stringify(items)
+      elderId,
+      medications: JSON.stringify(items),
+      alarmSnoozeText: String(settings.alarmSnoozeText),
+      alarmSnoozeDuration: String(settings.alarmSnoozeDuration),
+      autoSnoozeEnabled: String(settings.autoSnoozeEnabled),
+      autoSnoozeAfterSeconds: String(settings.autoSnoozeAfterSeconds),
+      stickyAlarmNotification: String(settings.stickyAlarmNotification)
     })
   } catch (err) {
     console.warn("[sendSilentAlarmSchedulePush] Error sending push:", err)

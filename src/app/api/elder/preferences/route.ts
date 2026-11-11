@@ -62,14 +62,29 @@ export async function GET(req: Request) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 })
     }
 
-    const profile = await prisma.elderProfile.findUnique({
-      where: { userId: targetElderId }
-    })
+    const [profile, user] = await Promise.all([
+      prisma.elderProfile.findUnique({
+        where: { userId: targetElderId }
+      }),
+      prisma.user.findUnique({
+        where: { id: targetElderId },
+        select: {
+          alarmSnoozeText: true,
+          alarmSnoozeDuration: true,
+          autoSnoozeEnabled: true,
+          autoSnoozeAfterSeconds: true
+        }
+      })
+    ])
 
     return NextResponse.json({ 
       requiredVitals: profile?.requiredVitals || "BP,SUGAR,SPO2,PULSE,TEMP,WEIGHT",
       askSymptoms: profile?.askSymptoms ?? true,
-      stickyAlarmNotification: profile?.stickyAlarmNotification ?? true
+      stickyAlarmNotification: profile?.stickyAlarmNotification ?? true,
+      alarmSnoozeText: user?.alarmSnoozeText || "Take later",
+      alarmSnoozeDuration: user?.alarmSnoozeDuration ?? 10,
+      autoSnoozeEnabled: user?.autoSnoozeEnabled ?? false,
+      autoSnoozeAfterSeconds: user?.autoSnoozeAfterSeconds ?? 60
     })
   } catch (error) {
     console.error("Error fetching preferences:", error)

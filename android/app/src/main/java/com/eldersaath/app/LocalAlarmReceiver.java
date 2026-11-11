@@ -51,10 +51,22 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
         String body = intent.getStringExtra("body");
         String actionText = intent.getStringExtra("actionText");
         String snoozeText = intent.getStringExtra("snoozeText");
-        int snoozeDuration = intent.getIntExtra("snoozeDuration", 10);
+        SharedPreferences prefs = context.getSharedPreferences("ElderSaathAlarms", Context.MODE_PRIVATE);
+        if (elderId == null || elderId.isEmpty()) {
+            elderId = prefs.getString("elder_id", "");
+        }
+
+        int snoozeDuration = intent.hasExtra("snoozeDuration")
+            ? intent.getIntExtra("snoozeDuration", 10)
+            : AlarmScheduler.getChildSnoozeDuration(context, elderId);
+        boolean autoSnoozeEnabled = intent.hasExtra("autoSnoozeEnabled")
+            ? intent.getBooleanExtra("autoSnoozeEnabled", false)
+            : AlarmScheduler.isAutoSnoozeEnabled(context, elderId);
+        int autoSnoozeAfterSeconds = intent.hasExtra("autoSnoozeAfterSeconds")
+            ? intent.getIntExtra("autoSnoozeAfterSeconds", 60)
+            : AlarmScheduler.getAutoSnoozeAfterSeconds(context, elderId);
 
         // 2. Prevent duplicate alarm storm with FCM cloud push (only for initial alarms, not user snoozes)
-        SharedPreferences prefs = context.getSharedPreferences("ElderSaathAlarms", Context.MODE_PRIVATE);
         long lastFired = prefs.getLong("last_alarm_fired_timestamp", 0);
         String lastMed = prefs.getString("last_alarm_fired_med_id", "");
         long now = System.currentTimeMillis();
@@ -90,7 +102,7 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
         }
 
         if (snoozeText == null || snoozeText.isEmpty()) {
-            snoozeText = "TASK".equalsIgnoreCase(type) ? "Do task later" : "Take later";
+            snoozeText = AlarmScheduler.getChildSnoozeText(context, elderId, type);
         }
 
         // 3. Force CPU and Screen awake immediately
@@ -101,7 +113,10 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
                     PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE,
                     "ElderSaath::LocalHardwareAlarmWakeLock"
                 );
-                wakeLock.acquire(3 * 60 * 1000L); // 3 mins
+                long wakeMs = autoSnoozeEnabled
+                    ? Math.min(30 * 60 * 1000L, Math.max(3 * 60 * 1000L, (autoSnoozeAfterSeconds + 30L) * 1000L))
+                    : 3 * 60 * 1000L;
+                wakeLock.acquire(wakeMs);
             } catch (Exception e) {
                 Log.w(TAG, "Could not acquire WakeLock", e);
             }
@@ -128,6 +143,8 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
         alarmIntent.putExtra("actionText", actionText);
         alarmIntent.putExtra("snoozeText", snoozeText);
         alarmIntent.putExtra("snoozeDuration", snoozeDuration);
+        alarmIntent.putExtra("autoSnoozeEnabled", autoSnoozeEnabled);
+        alarmIntent.putExtra("autoSnoozeAfterSeconds", autoSnoozeAfterSeconds);
         alarmIntent.putExtra("elderId", elderId);
         alarmIntent.putExtra("medicationId", medicationId);
         alarmIntent.putExtra("type", type);

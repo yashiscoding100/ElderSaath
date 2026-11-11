@@ -266,4 +266,100 @@ public class AlarmScheduler {
         SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
         return prefs.getString(KEY_SAVED_MEDS, "[]");
     }
+
+    /**
+     * Persists child-configured snooze settings and admin-configured auto-snooze settings directly in phone memory.
+     */
+    public static void saveAlarmSettings(Context context, String elderId, String snoozeText,
+                                         int snoozeDuration, boolean autoSnoozeEnabled,
+                                         int autoSnoozeAfterSeconds, boolean stickyNotification) {
+        if (context == null) return;
+        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        SharedPreferences.Editor editor = prefs.edit();
+
+        int safeSnoozeDuration = Math.max(1, snoozeDuration);
+        int safeAutoSec = Math.max(5, autoSnoozeAfterSeconds);
+        String safeSnoozeText = (snoozeText != null && !snoozeText.trim().isEmpty()) ? snoozeText : "Take later";
+
+        // Global active keys
+        editor.putString("alarm_snooze_text", safeSnoozeText);
+        editor.putInt("alarm_snooze_duration", safeSnoozeDuration);
+        editor.putBoolean("auto_snooze_enabled", autoSnoozeEnabled);
+        editor.putInt("auto_snooze_after_seconds", safeAutoSec);
+        editor.putBoolean("sticky_alarm_notification", stickyNotification);
+
+        // Per-account keys
+        if (elderId != null && !elderId.trim().isEmpty()) {
+            String keySuffix = "_" + elderId.trim();
+            editor.putString("elder_id", elderId.trim());
+            editor.putString("alarm_snooze_text" + keySuffix, safeSnoozeText);
+            editor.putInt("alarm_snooze_duration" + keySuffix, safeSnoozeDuration);
+            editor.putBoolean("auto_snooze_enabled" + keySuffix, autoSnoozeEnabled);
+            editor.putInt("auto_snooze_after_seconds" + keySuffix, safeAutoSec);
+            editor.putBoolean("sticky_alarm_notification" + keySuffix, stickyNotification);
+        }
+
+        editor.apply();
+        Log.i(TAG, "Saved alarm & auto-snooze config in phone memory [elderId=" + elderId +
+              ", autoSnoozeEnabled=" + autoSnoozeEnabled +
+              ", autoSnoozeAfterSec=" + safeAutoSec +
+              ", childSnoozeDurationMin=" + safeSnoozeDuration + "]");
+    }
+
+    public static boolean isAutoSnoozeEnabled(Context context, String elderId) {
+        if (context == null) return false;
+        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        if (elderId != null && !elderId.trim().isEmpty()) {
+            String key = "auto_snooze_enabled_" + elderId.trim();
+            if (prefs.contains(key)) {
+                return prefs.getBoolean(key, false);
+            }
+        }
+        return prefs.getBoolean("auto_snooze_enabled", false);
+    }
+
+    public static int getAutoSnoozeAfterSeconds(Context context, String elderId) {
+        if (context == null) return 60;
+        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        if (elderId != null && !elderId.trim().isEmpty()) {
+            String key = "auto_snooze_after_seconds_" + elderId.trim();
+            if (prefs.contains(key)) {
+                return Math.max(5, prefs.getInt(key, 60));
+            }
+        }
+        return Math.max(5, prefs.getInt("auto_snooze_after_seconds", 60));
+    }
+
+    public static int getChildSnoozeDuration(Context context, String elderId) {
+        if (context == null) return 10;
+        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        if (elderId != null && !elderId.trim().isEmpty()) {
+            String key = "alarm_snooze_duration_" + elderId.trim();
+            if (prefs.contains(key)) {
+                return Math.max(1, prefs.getInt(key, 10));
+            }
+        }
+        return Math.max(1, prefs.getInt("alarm_snooze_duration", 10));
+    }
+
+    public static String getChildSnoozeText(Context context, String elderId, String alarmType) {
+        String defaultText = "TASK".equalsIgnoreCase(alarmType) ? "Do task later" : "Take later";
+        if (context == null) return defaultText;
+        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        String val = null;
+        if (elderId != null && !elderId.trim().isEmpty()) {
+            String key = "alarm_snooze_text_" + elderId.trim();
+            if (prefs.contains(key)) {
+                val = prefs.getString(key, null);
+            }
+        }
+        if (val == null || val.trim().isEmpty()) {
+            val = prefs.getString("alarm_snooze_text", null);
+        }
+        if (val == null || val.trim().isEmpty()) return defaultText;
+        if ("TASK".equalsIgnoreCase(alarmType) && "Take later".equalsIgnoreCase(val.trim())) {
+            return "Do task later";
+        }
+        return val;
+    }
 }

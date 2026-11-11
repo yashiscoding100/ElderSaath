@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import bcrypt from "bcryptjs"
+import { sendSilentAlarmSchedulePush } from "@/lib/alarmSync"
 
 export const dynamic = 'force-dynamic'
 
@@ -42,7 +43,7 @@ export async function PATCH(req: Request) {
   }
 
   try {
-    const { id, isBlocked, blockMessage, name, role } = await req.json()
+    const { id, isBlocked, blockMessage, name, role, autoSnoozeEnabled, autoSnoozeAfterSeconds } = await req.json()
 
     if (!id) {
       return NextResponse.json({ message: "User ID is required" }, { status: 400 })
@@ -59,11 +60,26 @@ export async function PATCH(req: Request) {
     }
     if (name !== undefined) updateData.name = name
     if (role !== undefined) updateData.role = role
+    if (autoSnoozeEnabled !== undefined) {
+      updateData.autoSnoozeEnabled = Boolean(autoSnoozeEnabled)
+    }
+    if (autoSnoozeAfterSeconds !== undefined) {
+      const parsedSec = Number(autoSnoozeAfterSeconds)
+      if (!Number.isFinite(parsedSec) || parsedSec < 5 || parsedSec > 3600) {
+        return NextResponse.json({ message: "Auto-snooze time must be between 5 seconds and 60 minutes (3600s)" }, { status: 400 })
+      }
+      updateData.autoSnoozeAfterSeconds = Math.round(parsedSec)
+    }
 
     await prisma.user.update({
       where: { id },
       data: updateData
     })
+
+    // Immediately sync updated alarm & auto-snooze configuration to the user's phone memory via silent FCM
+    if (autoSnoozeEnabled !== undefined || autoSnoozeAfterSeconds !== undefined) {
+      await sendSilentAlarmSchedulePush(id).catch(() => {})
+    }
 
     return NextResponse.json({ message: "User updated successfully" }, { status: 200 })
   } catch (error) {

@@ -28,6 +28,8 @@ export async function POST(req: Request) {
       body: `Dosage: ${med.dosage}. ${med.instructions || 'Scheduled medication test.'}`.trim(),
       snoozeText: med.elder.alarmSnoozeText || "Take later",
       snoozeDuration: (med.elder.alarmSnoozeDuration || 10).toString(),
+      autoSnoozeEnabled: String(med.elder.autoSnoozeEnabled === true),
+      autoSnoozeAfterSeconds: String(med.elder.autoSnoozeAfterSeconds ?? 60),
       elderId: med.elderId,
       stickyNotification: med.elder.elderProfile?.stickyAlarmNotification !== false ? "true" : "false"
     })

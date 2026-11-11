@@ -107,6 +107,19 @@
                 android:paddingTop="15dp"
                 android:paddingBottom="15dp"
                 android:elevation="3dp" />
+
+            <!-- Auto-Snooze Live Countdown Indicator (Visible only when Admin enables Auto-Snooze for account) -->
+            <TextView
+                android:id="@+id/tvAutoSnoozeStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:visibility="gone"
+                android:text="⏱️ Auto-snoozing in 60s if no response..."
+                android:textColor="#CBD5E1"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:gravity="center"
+                android:layout_marginTop="16dp" />
         </LinearLayout>
 
     </LinearLayout>

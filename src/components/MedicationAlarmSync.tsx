@@ -151,7 +151,7 @@ export function MedicationAlarmSync() {
         }
       }
 
-      // 4. Sync Health Check Preferences & Required Vitals to Android Widget
+      // 4. Sync Health Check Preferences & Required Vitals + Alarm & Auto-Snooze Config to Phone Memory
       const prefRes = await fetch("/api/elder/preferences").catch(() => null)
       if (prefRes && prefRes.ok) {
         const prefData = await prefRes.json()
@@ -165,6 +165,28 @@ export function MedicationAlarmSync() {
             console.log("[MedicationAlarmSync] Health Check Widget preferences synced:", prefData.requiredVitals)
           } catch (prefErr) {
             console.warn("[MedicationAlarmSync] Health pref sync error:", prefErr)
+          }
+        }
+
+        const alarmSettings = {
+          elderId: session.user.id,
+          alarmSnoozeText: prefData?.alarmSnoozeText || "Take later",
+          alarmSnoozeDuration: Number(prefData?.alarmSnoozeDuration ?? 10),
+          autoSnoozeEnabled: prefData?.autoSnoozeEnabled === true,
+          autoSnoozeAfterSeconds: Number(prefData?.autoSnoozeAfterSeconds ?? 60),
+          stickyAlarmNotification: prefData?.stickyAlarmNotification !== false
+        }
+
+        try {
+          localStorage.setItem("eldersaath_alarm_settings", JSON.stringify(alarmSettings))
+        } catch {}
+
+        if (AlarmSyncPlugin && typeof AlarmSyncPlugin.syncAlarmSettings === "function") {
+          try {
+            await AlarmSyncPlugin.syncAlarmSettings(alarmSettings)
+            console.log("[MedicationAlarmSync] Auto-Snooze & snooze settings stored on device:", alarmSettings)
+          } catch (alarmSettingErr) {
+            console.warn("[MedicationAlarmSync] Alarm settings sync error:", alarmSettingErr)
           }
         }
       }

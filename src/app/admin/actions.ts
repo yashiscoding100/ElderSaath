@@ -25,13 +25,34 @@ export async function sendAdminNotification(userId: string, title: string, body:
   if (session?.user?.role !== 'ADMIN') return { success: false, message: 'Unauthorized' }
 
   try {
-    const payload = {
+    let autoSnoozeEnabled = false
+    let autoSnoozeAfterSeconds = 60
+
+    if (isAlarm && userId !== "ALL") {
+      const targetUser = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { autoSnoozeEnabled: true, autoSnoozeAfterSeconds: true }
+      })
+      if (targetUser) {
+        autoSnoozeEnabled = targetUser.autoSnoozeEnabled
+        autoSnoozeAfterSeconds = targetUser.autoSnoozeAfterSeconds
+      }
+    }
+
+    const payload: Record<string, unknown> = {
       title,
       body,
       url: '/',
       type: isAlarm ? 'ALARM' : 'NOTIFICATION',
       snoozeDuration: String(snoozeDuration),
-      label: title, snoozeText }
+      label: title,
+      snoozeText,
+      ...(userId !== "ALL" ? { elderId: userId } : {}),
+      ...(isAlarm && userId !== "ALL" ? {
+        autoSnoozeEnabled: String(autoSnoozeEnabled),
+        autoSnoozeAfterSeconds: String(autoSnoozeAfterSeconds)
+      } : {})
+    }
 
     if (userId === "ALL") {
       const { broadcastPushNotification } = await import('@/lib/push')
@@ -132,4 +153,3 @@ export async function purgeDatabaseLogs() {
     return { success: false, message: error.message || "Failed to purge logs" }
   }
 }
-

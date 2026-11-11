@@ -27,6 +27,8 @@ model User {
   canManageMeds Boolean   @default(false)
   alarmSnoozeText String?   @default("Take later")
   alarmSnoozeDuration Int?  @default(10)
+  autoSnoozeEnabled  Boolean @default(false)
+  autoSnoozeAfterSeconds Int @default(60)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

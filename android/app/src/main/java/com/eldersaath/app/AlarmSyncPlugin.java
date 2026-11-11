@@ -288,11 +288,48 @@ public class AlarmSyncPlugin extends Plugin {
     public void getScheduledAlarms(PluginCall call) {
         try {
             String saved = AlarmScheduler.getSavedMedications(getContext());
+            SharedPreferences prefs = getContext().getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+            String elderId = prefs.getString("elder_id", "");
+
             JSObject ret = new JSObject();
             ret.put("savedMedications", saved);
+            ret.put("autoSnoozeEnabled", AlarmScheduler.isAutoSnoozeEnabled(getContext(), elderId));
+            ret.put("autoSnoozeAfterSeconds", AlarmScheduler.getAutoSnoozeAfterSeconds(getContext(), elderId));
+            ret.put("alarmSnoozeDuration", AlarmScheduler.getChildSnoozeDuration(getContext(), elderId));
             call.resolve(ret);
         } catch (Exception e) {
             call.reject("Failed to get scheduled alarms: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void syncAlarmSettings(PluginCall call) {
+        try {
+            String elderId = call.getString("elderId", "");
+            String snoozeText = call.getString("alarmSnoozeText", "Take later");
+            Integer snoozeDuration = call.getInt("alarmSnoozeDuration", 10);
+            Boolean autoSnoozeEnabled = call.getBoolean("autoSnoozeEnabled", false);
+            Integer autoSnoozeAfterSeconds = call.getInt("autoSnoozeAfterSeconds", 60);
+            Boolean stickyNotification = call.getBoolean("stickyAlarmNotification", true);
+
+            AlarmScheduler.saveAlarmSettings(
+                getContext(),
+                elderId,
+                snoozeText,
+                snoozeDuration != null ? snoozeDuration : 10,
+                autoSnoozeEnabled != null && autoSnoozeEnabled,
+                autoSnoozeAfterSeconds != null ? autoSnoozeAfterSeconds : 60,
+                stickyNotification == null || stickyNotification
+            );
+
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            ret.put("autoSnoozeEnabled", autoSnoozeEnabled != null && autoSnoozeEnabled);
+            ret.put("autoSnoozeAfterSeconds", autoSnoozeAfterSeconds != null ? autoSnoozeAfterSeconds : 60);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to sync alarm settings", e);
+            call.reject("Failed to sync alarm settings: " + e.getMessage());
         }
     }
 

@@ -37,6 +37,8 @@ export async function runMedicationAndTaskCrons(forceAll: boolean = false) {
         body: `Dosage: ${med.dosage || '1 tablet'}. Instructions: ${med.instructions || 'Manual test alarm'}`,
         snoozeText: med.elder.alarmSnoozeText || "Take later",
         snoozeDuration: (med.elder.alarmSnoozeDuration || 10).toString(),
+        autoSnoozeEnabled: String(med.elder.autoSnoozeEnabled === true),
+        autoSnoozeAfterSeconds: String(med.elder.autoSnoozeAfterSeconds ?? 60),
         elderId: med.elderId,
         stickyNotification: med.elder.elderProfile?.stickyAlarmNotification !== false ? "true" : "false"
       })

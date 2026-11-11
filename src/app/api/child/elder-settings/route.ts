@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
+import { sendSilentAlarmSchedulePush } from "@/lib/alarmSync"
 
 export async function POST(req: Request) {
   const session = await auth()
@@ -36,6 +37,9 @@ export async function POST(req: Request) {
         create: { userId: elderId, stickyAlarmNotification }
       })
     }
+
+    // Immediately sync updated snooze duration/text into Elder's phone memory via silent FCM
+    await sendSilentAlarmSchedulePush(elderId).catch(() => {})
 
     return NextResponse.json({ success: true })
   } catch (error) {

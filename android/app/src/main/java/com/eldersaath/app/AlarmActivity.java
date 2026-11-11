@@ -14,7 +14,10 @@ import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.PowerManager;
+import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.util.Log;
@@ -44,10 +47,23 @@ public class AlarmActivity extends Activity {
     private MediaPlayer mediaPlayer;
     private Vibrator vibrator;
     private PowerManager.WakeLock wakeLock;
+    private Handler autoSnoozeHandler;
+    private Runnable autoSnoozeRunnable;
+    private volatile boolean alarmHandled = false;
+
+    private void cancelAutoSnoozeTimer() {
+        try {
+            if (autoSnoozeHandler != null && autoSnoozeRunnable != null) {
+                autoSnoozeHandler.removeCallbacks(autoSnoozeRunnable);
+            }
+        } catch (Exception ignored) {}
+    }
 
     public static void stopCurrentAlarm(Context context) {
         try {
             if (currentInstance != null) {
+                currentInstance.alarmHandled = true;
+                currentInstance.cancelAutoSnoozeTimer();
                 currentInstance.stopAlarmAndSound();
                 currentInstance.finish();
                 currentInstance = null;
@@ -66,6 +82,8 @@ public class AlarmActivity extends Activity {
     public static void stopActiveAlarmSound(Context context) {
         try {
             if (currentInstance != null) {
+                currentInstance.alarmHandled = true;
+                currentInstance.cancelAutoSnoozeTimer();
                 currentInstance.stopAlarmAndSound();
                 currentInstance.finish();
                 currentInstance = null;
@@ -85,6 +103,7 @@ public class AlarmActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         currentInstance = this;
+        alarmHandled = false;
 
         // 1. Force Screen ON and Show Over Lockscreen
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -99,19 +118,13 @@ public class AlarmActivity extends Activity {
             WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON
         );
 
-        // 2. CPU WakeLock for duration of alarm
-        try {
-            PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
-            if (powerManager != null) {
-                wakeLock = powerManager.newWakeLock(
-                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE,
-                    "ElderSaath::AlarmActivityWakeLock"
-                );
-                wakeLock.acquire(3 * 60 * 1000L); // 3 minutes timeout
-            }
-        } catch (Exception ignored) {}
+        // 2. Extract Alarm Details & Stored On-Device Settings
+        String elderId = getIntent().getStringExtra("elderId");
+        if (elderId == null || elderId.isEmpty()) {
+            SharedPreferences prefs = getSharedPreferences("ElderSaathAlarms", Context.MODE_PRIVATE);
+            elderId = prefs.getString("elder_id", "");
+        }
 
-        // 3. Extract Alarm Details
         String actionText = getIntent().getStringExtra("actionText");
         if (actionText == null || actionText.isEmpty()) actionText = "TAKE MEDICINE / STOP ALARM";
 
@@ -121,10 +134,14 @@ public class AlarmActivity extends Activity {
         String body = getIntent().getStringExtra("body");
         if (body == null) body = "Please take your medications on time.";
 
+        String alarmType = getIntent().getStringExtra("type");
+
         String snoozeText = getIntent().getStringExtra("snoozeText");
-        if (snoozeText == null || snoozeText.isEmpty()) snoozeText = "I'll take the medicines later";
+        if (snoozeText == null || snoozeText.isEmpty()) {
+            snoozeText = AlarmScheduler.getChildSnoozeText(this, elderId, alarmType);
+        }
         
-        int parsedSnooze = 10;
+        int parsedSnooze = AlarmScheduler.getChildSnoozeDuration(this, elderId);
         try {
             if (getIntent().hasExtra("snoozeDuration")) {
                 Object obj = getIntent().getExtras().get("snoozeDuration");
@@ -135,16 +152,31 @@ public class AlarmActivity extends Activity {
                 }
             }
         } catch (Exception ignored) {}
-        final int snoozeDuration = parsedSnooze;
+        final int snoozeDuration = Math.max(1, parsedSnooze);
 
-        String elderId = getIntent().getStringExtra("elderId");
-        if (elderId == null || elderId.isEmpty()) {
-            SharedPreferences prefs = getSharedPreferences("ElderSaathAlarms", Context.MODE_PRIVATE);
-            elderId = prefs.getString("elder_id", "");
-        }
+        final boolean autoSnoozeEnabled = getIntent().hasExtra("autoSnoozeEnabled")
+            ? getIntent().getBooleanExtra("autoSnoozeEnabled", false)
+            : AlarmScheduler.isAutoSnoozeEnabled(this, elderId);
+        final int autoSnoozeAfterSeconds = Math.max(5, getIntent().hasExtra("autoSnoozeAfterSeconds")
+            ? getIntent().getIntExtra("autoSnoozeAfterSeconds", 60)
+            : AlarmScheduler.getAutoSnoozeAfterSeconds(this, elderId));
+
+        // 3. CPU WakeLock for duration of alarm + auto-snooze countdown
+        try {
+            PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (powerManager != null) {
+                wakeLock = powerManager.newWakeLock(
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE,
+                    "ElderSaath::AlarmActivityWakeLock"
+                );
+                long wakeMs = autoSnoozeEnabled
+                    ? Math.min(30 * 60 * 1000L, Math.max(3 * 60 * 1000L, (autoSnoozeAfterSeconds + 30L) * 1000L))
+                    : 3 * 60 * 1000L;
+                wakeLock.acquire(wakeMs);
+            }
+        } catch (Exception ignored) {}
 
         String medicationId = getIntent().getStringExtra("medicationId");
-        String alarmType = getIntent().getStringExtra("type");
 
         // If medicationId wasn't passed directly, look it up in cached alarms
         if ((medicationId == null || medicationId.isEmpty()) && label != null) {
@@ -179,6 +211,7 @@ public class AlarmActivity extends Activity {
         TextView bodyView = findViewById(R.id.tvAlarmBody);
         Button stopBtn = findViewById(R.id.btnStopAlarm);
         Button snoozeBtn = findViewById(R.id.btnSnoozeAlarm);
+        final TextView autoSnoozeStatusView = findViewById(R.id.tvAutoSnoozeStatus);
 
         if (label.contains("SOS") || label.contains("EMERGENCY")) {
             iconView.setText("🚨");
@@ -201,35 +234,23 @@ public class AlarmActivity extends Activity {
         }
         snoozeBtn.setText(displaySnooze);
 
-        // Immediate responsive click handling for lockscreen wakeup
-        View.OnClickListener stopClickListener = new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                stopAlarmAndSound();
-                if ("TASK".equalsIgnoreCase(finalAlarmType)) {
-                    markMedicationOrTaskTaken(AlarmActivity.this, finalMedicationId, finalElderId, "TASK");
-                    Toast.makeText(AlarmActivity.this, "✓ Task completed!", Toast.LENGTH_SHORT).show();
-                } else {
-                    markMedicationOrTaskTaken(AlarmActivity.this, finalMedicationId, finalElderId, "MEDICATION");
-                    Toast.makeText(AlarmActivity.this, "✓ Medicine marked as taken!", Toast.LENGTH_SHORT).show();
-                }
-                finish();
-            }
-        };
-        stopBtn.setOnClickListener(stopClickListener);
-
         final String finalActionText = actionText;
         final String finalLabel = label;
         final String finalBody = body;
         final String finalSnoozeText = snoozeText;
-        
-        View.OnClickListener snoozeClickListener = new View.OnClickListener() {
+
+        final Runnable performSnoozeAction = new Runnable() {
             @Override
-            public void onClick(View v) {
+            public void run() {
+                if (alarmHandled) return;
+                alarmHandled = true;
+                cancelAutoSnoozeTimer();
                 stopAlarmAndSound();
 
-                // Notify caregiver server in background that snooze was pressed
-                notifySnoozeToServer(AlarmActivity.this, finalElderId);
+                boolean triggeredAutomatically = "AUTO".equals(autoSnoozeStatusView.getTag());
+
+                // Notify caregiver server in background that snooze was triggered
+                notifySnoozeToServer(AlarmActivity.this, finalElderId, triggeredAutomatically);
                 
                 // Route snooze alarm through LocalAlarmReceiver using setAlarmClock
                 // This pierces MIUI / HyperOS battery optimizations and bypasses Android 10+ background activity launch restrictions
@@ -241,6 +262,8 @@ public class AlarmActivity extends Activity {
                 snoozeIntent.putExtra("body", finalBody);
                 snoozeIntent.putExtra("snoozeText", finalSnoozeText);
                 snoozeIntent.putExtra("snoozeDuration", snoozeDuration);
+                snoozeIntent.putExtra("autoSnoozeEnabled", autoSnoozeEnabled);
+                snoozeIntent.putExtra("autoSnoozeAfterSeconds", autoSnoozeAfterSeconds);
                 snoozeIntent.putExtra("medicationId", finalMedicationId);
                 snoozeIntent.putExtra("name", finalLabel);
                 snoozeIntent.putExtra("type", finalAlarmType);
@@ -268,14 +291,70 @@ public class AlarmActivity extends Activity {
                         am.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pi);
                     }
                 }
-                
-                Toast.makeText(AlarmActivity.this, "Alarm snoozed for " + snoozeDuration + " minutes", Toast.LENGTH_LONG).show();
+
+                String toastMsg = triggeredAutomatically
+                    ? "No response — Alarm auto-snoozed for " + snoozeDuration + " minutes"
+                    : "Alarm snoozed for " + snoozeDuration + " minutes";
+                Toast.makeText(AlarmActivity.this, toastMsg, Toast.LENGTH_LONG).show();
                 finish();
+            }
+        };
+
+        // Immediate responsive click handling for lockscreen wakeup
+        View.OnClickListener stopClickListener = new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (alarmHandled) return;
+                alarmHandled = true;
+                cancelAutoSnoozeTimer();
+                stopAlarmAndSound();
+                if ("TASK".equalsIgnoreCase(finalAlarmType)) {
+                    markMedicationOrTaskTaken(AlarmActivity.this, finalMedicationId, finalElderId, "TASK");
+                    Toast.makeText(AlarmActivity.this, "✓ Task completed!", Toast.LENGTH_SHORT).show();
+                } else {
+                    markMedicationOrTaskTaken(AlarmActivity.this, finalMedicationId, finalElderId, "MEDICATION");
+                    Toast.makeText(AlarmActivity.this, "✓ Medicine marked as taken!", Toast.LENGTH_SHORT).show();
+                }
+                finish();
+            }
+        };
+        stopBtn.setOnClickListener(stopClickListener);
+
+        View.OnClickListener snoozeClickListener = new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                autoSnoozeStatusView.setTag("MANUAL");
+                performSnoozeAction.run();
             }
         };
         snoozeBtn.setOnClickListener(snoozeClickListener);
 
-        // 5. Start Single Continuous Sound and Aggressive Vibration
+        // 5. Start Auto-Snooze Countdown (ONLY if enabled by Admin for this account)
+        boolean isEmergencySos = finalLabel.contains("EMERGENCY SOS") || "EMERGENCY_SOS".equalsIgnoreCase(finalAlarmType);
+        if (autoSnoozeEnabled && autoSnoozeAfterSeconds > 0 && !isEmergencySos) {
+            final long deadlineElapsed = SystemClock.elapsedRealtime() + (autoSnoozeAfterSeconds * 1000L);
+            autoSnoozeStatusView.setVisibility(View.VISIBLE);
+            autoSnoozeHandler = new Handler(Looper.getMainLooper());
+            autoSnoozeRunnable = new Runnable() {
+                @Override
+                public void run() {
+                    if (alarmHandled || isFinishing() || isDestroyed()) return;
+                    long remainingMs = deadlineElapsed - SystemClock.elapsedRealtime();
+                    if (remainingMs <= 0) {
+                        Log.i(TAG, "Auto-snooze countdown reached 0 for account " + finalElderId + " - auto-snoozing for " + snoozeDuration + " mins.");
+                        autoSnoozeStatusView.setTag("AUTO");
+                        performSnoozeAction.run();
+                        return;
+                    }
+                    long remainingSec = (long) Math.ceil(remainingMs / 1000.0);
+                    autoSnoozeStatusView.setText("⏱️ Auto-snoozing in " + remainingSec + "s if no response...");
+                    autoSnoozeHandler.postDelayed(this, 1000L);
+                }
+            };
+            autoSnoozeHandler.post(autoSnoozeRunnable);
+        }
+
+        // 6. Start Single Continuous Sound and Aggressive Vibration
         startAlarmSoundAndVibration();
     }
 
@@ -355,9 +434,13 @@ public class AlarmActivity extends Activity {
     }
 
     /**
-     * Notifies caregiver server asynchronously that the elder snoozed their alarm.
+     * Notifies caregiver server asynchronously that the elder snoozed (manually or automatically) their alarm.
      */
     public static void notifySnoozeToServer(final Context context, final String elderId) {
+        notifySnoozeToServer(context, elderId, false);
+    }
+
+    public static void notifySnoozeToServer(final Context context, final String elderId, final boolean autoSnoozed) {
         if (elderId == null || elderId.trim().isEmpty()) {
             Log.d("ALARM_DEBUG", "No elderId provided for snooze notification, skipping.");
             return;
@@ -387,6 +470,7 @@ public class AlarmActivity extends Activity {
 
                     JSONObject payload = new JSONObject();
                     payload.put("elderId", elderId);
+                    payload.put("autoSnoozed", autoSnoozed);
 
                     OutputStream os = conn.getOutputStream();
                     os.write(payload.toString().getBytes(StandardCharsets.UTF_8));
@@ -394,7 +478,7 @@ public class AlarmActivity extends Activity {
                     os.close();
 
                     int code = conn.getResponseCode();
-                    Log.i("ALARM_DEBUG", "Snooze notified to server! HTTP Response: " + code);
+                    Log.i("ALARM_DEBUG", "Snooze notified to server! HTTP Response: " + code + " (autoSnoozed=" + autoSnoozed + ")");
                 } catch (Exception e) {
                     Log.w("ALARM_DEBUG", "Server snooze notification failed: " + e.getMessage());
                 } finally {
@@ -519,6 +603,8 @@ public class AlarmActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        alarmHandled = true;
+        cancelAutoSnoozeTimer();
         stopAlarmAndSound();
         if (currentInstance == this) {
             currentInstance = null;
