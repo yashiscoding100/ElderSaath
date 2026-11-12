@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import bcrypt from "bcryptjs"
-import { sendSilentAlarmSchedulePush } from "@/lib/alarmSync"
+import { isValidAlarmHexColor, sendSilentAlarmSchedulePush } from "@/lib/alarmSync"
 
 export const dynamic = "force-dynamic"
 
@@ -58,7 +58,10 @@ export async function PATCH(req: Request) {
       canManageMeds,
       notifyVitals,
       notifySnooze,
-      stickyAlarmNotification
+      stickyAlarmNotification,
+      alarmButtonOrder,
+      alarmTakeBtnColor,
+      alarmSnoozeBtnColor
     } = body
 
     if (!id) {
@@ -82,6 +85,9 @@ export async function PATCH(req: Request) {
       canManageMeds?: boolean
       notifyVitals?: boolean
       notifySnooze?: boolean
+      alarmButtonOrder?: string
+      alarmTakeBtnColor?: string
+      alarmSnoozeBtnColor?: string
     } = {}
 
     if (isBlocked !== undefined) {
@@ -121,6 +127,33 @@ export async function PATCH(req: Request) {
     if (canManageMeds !== undefined) updateData.canManageMeds = Boolean(canManageMeds)
     if (notifyVitals !== undefined) updateData.notifyVitals = Boolean(notifyVitals)
     if (notifySnooze !== undefined) updateData.notifySnooze = Boolean(notifySnooze)
+    if (alarmButtonOrder !== undefined) {
+      if (alarmButtonOrder !== "TAKE_FIRST" && alarmButtonOrder !== "SNOOZE_FIRST") {
+        return NextResponse.json(
+          { message: "Alarm button order must be TAKE_FIRST or SNOOZE_FIRST" },
+          { status: 400 }
+        )
+      }
+      updateData.alarmButtonOrder = alarmButtonOrder
+    }
+    if (alarmTakeBtnColor !== undefined) {
+      if (!isValidAlarmHexColor(alarmTakeBtnColor)) {
+        return NextResponse.json(
+          { message: "Take Medicine button color must be a valid hex color (e.g. #10B981)" },
+          { status: 400 }
+        )
+      }
+      updateData.alarmTakeBtnColor = String(alarmTakeBtnColor).trim().toUpperCase()
+    }
+    if (alarmSnoozeBtnColor !== undefined) {
+      if (!isValidAlarmHexColor(alarmSnoozeBtnColor)) {
+        return NextResponse.json(
+          { message: "Snooze button color must be a valid hex color (e.g. #334155)" },
+          { status: 400 }
+        )
+      }
+      updateData.alarmSnoozeBtnColor = String(alarmSnoozeBtnColor).trim().toUpperCase()
+    }
 
     if (Object.keys(updateData).length > 0) {
       await prisma.user.update({
@@ -143,7 +176,10 @@ export async function PATCH(req: Request) {
       autoSnoozeAfterSeconds !== undefined ||
       alarmSnoozeDuration !== undefined ||
       alarmSnoozeText !== undefined ||
-      stickyAlarmNotification !== undefined
+      stickyAlarmNotification !== undefined ||
+      alarmButtonOrder !== undefined ||
+      alarmTakeBtnColor !== undefined ||
+      alarmSnoozeBtnColor !== undefined
     ) {
       await sendSilentAlarmSchedulePush(id).catch(() => {})
     }

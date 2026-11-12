@@ -35,25 +35,52 @@ public class MyMessagingService extends MessagingService {
                 AlarmScheduler.rescheduleAll(this);
             }
 
-            // Persist child snooze & admin auto-snooze configuration into phone memory
+            // Persist child snooze, admin auto-snooze & button layout settings into phone memory
             if (remoteMessage.getData().containsKey("autoSnoozeEnabled") ||
-                remoteMessage.getData().containsKey("alarmSnoozeDuration")) {
+                remoteMessage.getData().containsKey("alarmSnoozeDuration") ||
+                remoteMessage.getData().containsKey("alarmButtonOrder") ||
+                remoteMessage.getData().containsKey("alarmTakeBtnColor") ||
+                remoteMessage.getData().containsKey("alarmSnoozeBtnColor")) {
                 String syncElderId = remoteMessage.getData().get("elderId");
-                String syncSnoozeText = remoteMessage.getData().get("alarmSnoozeText");
-                int syncSnoozeDur = 10;
+                String syncSnoozeText = remoteMessage.getData().containsKey("alarmSnoozeText")
+                    ? remoteMessage.getData().get("alarmSnoozeText")
+                    : AlarmScheduler.getChildSnoozeText(this, syncElderId, "MEDICATION");
+                int syncSnoozeDur = AlarmScheduler.getChildSnoozeDuration(this, syncElderId);
                 try {
                     String sDur = remoteMessage.getData().get("alarmSnoozeDuration");
                     if (sDur != null) syncSnoozeDur = Integer.parseInt(sDur);
                 } catch (Exception ignored) {}
-                boolean syncAutoEnabled = "true".equalsIgnoreCase(remoteMessage.getData().get("autoSnoozeEnabled"));
-                int syncAutoSec = 60;
+                boolean syncAutoEnabled = remoteMessage.getData().containsKey("autoSnoozeEnabled")
+                    ? "true".equalsIgnoreCase(remoteMessage.getData().get("autoSnoozeEnabled"))
+                    : AlarmScheduler.isAutoSnoozeEnabled(this, syncElderId);
+                int syncAutoSec = AlarmScheduler.getAutoSnoozeAfterSeconds(this, syncElderId);
                 try {
                     String sAutoSec = remoteMessage.getData().get("autoSnoozeAfterSeconds");
                     if (sAutoSec != null) syncAutoSec = Integer.parseInt(sAutoSec);
                 } catch (Exception ignored) {}
                 boolean syncSticky = !"false".equalsIgnoreCase(remoteMessage.getData().get("stickyAlarmNotification"));
+                String syncButtonOrder = remoteMessage.getData().containsKey("alarmButtonOrder")
+                    ? remoteMessage.getData().get("alarmButtonOrder")
+                    : AlarmScheduler.getAlarmButtonOrder(this, syncElderId);
+                String syncTakeColor = remoteMessage.getData().containsKey("alarmTakeBtnColor")
+                    ? remoteMessage.getData().get("alarmTakeBtnColor")
+                    : AlarmScheduler.getAlarmTakeBtnColor(this, syncElderId);
+                String syncSnoozeColor = remoteMessage.getData().containsKey("alarmSnoozeBtnColor")
+                    ? remoteMessage.getData().get("alarmSnoozeBtnColor")
+                    : AlarmScheduler.getAlarmSnoozeBtnColor(this, syncElderId);
 
-                AlarmScheduler.saveAlarmSettings(this, syncElderId, syncSnoozeText, syncSnoozeDur, syncAutoEnabled, syncAutoSec, syncSticky);
+                AlarmScheduler.saveAlarmSettings(
+                    this,
+                    syncElderId,
+                    syncSnoozeText,
+                    syncSnoozeDur,
+                    syncAutoEnabled,
+                    syncAutoSec,
+                    syncSticky,
+                    syncButtonOrder,
+                    syncTakeColor,
+                    syncSnoozeColor
+                );
             }
             return;
         }
@@ -215,6 +242,26 @@ public class MyMessagingService extends MessagingService {
                 fullScreenIntent.putExtra("snoozeDuration", snoozeDuration);
                 fullScreenIntent.putExtra("autoSnoozeEnabled", autoSnoozeEnabled);
                 fullScreenIntent.putExtra("autoSnoozeAfterSeconds", autoSnoozeAfterSeconds);
+                String alarmButtonOrder = AlarmScheduler.sanitizeButtonOrder(
+                    remoteMessage.getData().containsKey("alarmButtonOrder")
+                        ? remoteMessage.getData().get("alarmButtonOrder")
+                        : AlarmScheduler.getAlarmButtonOrder(this, elderId)
+                );
+                String alarmTakeBtnColor = AlarmScheduler.sanitizeHexColor(
+                    remoteMessage.getData().containsKey("alarmTakeBtnColor")
+                        ? remoteMessage.getData().get("alarmTakeBtnColor")
+                        : AlarmScheduler.getAlarmTakeBtnColor(this, elderId),
+                    AlarmScheduler.DEFAULT_TAKE_BTN_COLOR
+                );
+                String alarmSnoozeBtnColor = AlarmScheduler.sanitizeHexColor(
+                    remoteMessage.getData().containsKey("alarmSnoozeBtnColor")
+                        ? remoteMessage.getData().get("alarmSnoozeBtnColor")
+                        : AlarmScheduler.getAlarmSnoozeBtnColor(this, elderId),
+                    AlarmScheduler.DEFAULT_SNOOZE_BTN_COLOR
+                );
+                fullScreenIntent.putExtra("alarmButtonOrder", alarmButtonOrder);
+                fullScreenIntent.putExtra("alarmTakeBtnColor", alarmTakeBtnColor);
+                fullScreenIntent.putExtra("alarmSnoozeBtnColor", alarmSnoozeBtnColor);
                 boolean showSticky = true;
                 if (remoteMessage.getData().containsKey("stickyNotification")) {
                     if ("false".equals(remoteMessage.getData().get("stickyNotification"))) showSticky = false;

@@ -25,6 +25,9 @@ export default async function AdminUserManagementPage() {
         alarmSnoozeDuration: true,
         autoSnoozeEnabled: true,
         autoSnoozeAfterSeconds: true,
+        alarmButtonOrder: true,
+        alarmTakeBtnColor: true,
+        alarmSnoozeBtnColor: true,
         createdAt: true,
         elderProfile: {
           select: {
@@ -71,6 +74,13 @@ export default async function AdminUserManagementPage() {
         alarmSnoozeDuration: u.alarmSnoozeDuration ?? 10,
         autoSnoozeEnabled: Boolean(u.autoSnoozeEnabled),
         autoSnoozeAfterSeconds: Math.max(5, u.autoSnoozeAfterSeconds ?? 60),
+        alarmButtonOrder: u.alarmButtonOrder === "SNOOZE_FIRST" ? "SNOOZE_FIRST" : "TAKE_FIRST",
+        alarmTakeBtnColor: /^#[0-9A-Fa-f]{6}$/.test(u.alarmTakeBtnColor || "")
+          ? u.alarmTakeBtnColor.toUpperCase()
+          : "#10B981",
+        alarmSnoozeBtnColor: /^#[0-9A-Fa-f]{6}$/.test(u.alarmSnoozeBtnColor || "")
+          ? u.alarmSnoozeBtnColor.toUpperCase()
+          : "#334155",
         stickyAlarmNotification: u.elderProfile?.stickyAlarmNotification !== false,
         linkedNames,
         createdAt: u.createdAt.toISOString()

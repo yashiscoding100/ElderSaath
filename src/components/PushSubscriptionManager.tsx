@@ -41,15 +41,22 @@ export function PushSubscriptionManager() {
 
       registerDevice()
       
-      const handleNotification = (data: any, title: string, body: string) => {
+      const handleNotification = (data: Record<string, unknown> | undefined, title: string, bodyText: string) => {
         if (data?.type === "ALARM") {
-          const label = encodeURIComponent(data.label || title || "Alarm");
-          const snooze = data.snoozeDuration || "10";
-          const body = encodeURIComponent(data.body || ""); const snoozeText = encodeURIComponent(data.snoozeText || ""); router.push(`/alarm?label=${label}&snooze=${snooze}&body=${body}&snoozeText=${snoozeText}`);
+          const params = new URLSearchParams({
+            label: String(data.label || title || "Alarm"),
+            snooze: String(data.snoozeDuration || "10"),
+            body: String(data.body || ""),
+            snoozeText: String(data.snoozeText || "")
+          })
+          if (data.alarmButtonOrder) params.set("buttonOrder", String(data.alarmButtonOrder))
+          if (data.alarmTakeBtnColor) params.set("takeBtnColor", String(data.alarmTakeBtnColor))
+          if (data.alarmSnoozeBtnColor) params.set("snoozeBtnColor", String(data.alarmSnoozeBtnColor))
+          router.push(`/alarm?${params.toString()}`)
         } else {
-          alert(`NOTIFICATION: ${title}\n${body}`);
+          alert(`NOTIFICATION: ${title}\n${bodyText}`)
         }
-      };
+      }
 
       PushNotifications.addListener("pushNotificationReceived", (notification) => {
         handleNotification(notification.data, notification.title || "", notification.body || "");

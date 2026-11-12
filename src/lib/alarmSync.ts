@@ -1,6 +1,24 @@
 import { prisma } from "./prisma"
 import { sendPushNotification } from "./push"
 
+export const DEFAULT_ALARM_BUTTON_ORDER = "TAKE_FIRST" as const
+export const DEFAULT_ALARM_TAKE_BTN_COLOR = "#10B981"
+export const DEFAULT_ALARM_SNOOZE_BTN_COLOR = "#334155"
+
+export type AlarmButtonOrder = "TAKE_FIRST" | "SNOOZE_FIRST"
+
+export function normalizeAlarmButtonOrder(val: unknown): AlarmButtonOrder {
+  return val === "SNOOZE_FIRST" ? "SNOOZE_FIRST" : "TAKE_FIRST"
+}
+
+export function isValidAlarmHexColor(val: unknown): val is string {
+  return typeof val === "string" && /^#[0-9A-Fa-f]{6}$/.test(val.trim())
+}
+
+export function normalizeAlarmHexColor(val: unknown, fallback: string): string {
+  return isValidAlarmHexColor(val) ? val.trim().toUpperCase() : fallback
+}
+
 export interface UnifiedAlarmItem {
   id: string
   name: string
@@ -120,7 +138,10 @@ export async function getElderAlarmSettings(elderId: string) {
       alarmSnoozeDuration: 10,
       autoSnoozeEnabled: false,
       autoSnoozeAfterSeconds: 60,
-      stickyAlarmNotification: true
+      stickyAlarmNotification: true,
+      alarmButtonOrder: DEFAULT_ALARM_BUTTON_ORDER,
+      alarmTakeBtnColor: DEFAULT_ALARM_TAKE_BTN_COLOR,
+      alarmSnoozeBtnColor: DEFAULT_ALARM_SNOOZE_BTN_COLOR
     }
   }
 
@@ -132,6 +153,9 @@ export async function getElderAlarmSettings(elderId: string) {
         alarmSnoozeDuration: true,
         autoSnoozeEnabled: true,
         autoSnoozeAfterSeconds: true,
+        alarmButtonOrder: true,
+        alarmTakeBtnColor: true,
+        alarmSnoozeBtnColor: true,
         elderProfile: {
           select: { stickyAlarmNotification: true }
         }
@@ -143,7 +167,10 @@ export async function getElderAlarmSettings(elderId: string) {
       alarmSnoozeDuration: user?.alarmSnoozeDuration ?? 10,
       autoSnoozeEnabled: user?.autoSnoozeEnabled ?? false,
       autoSnoozeAfterSeconds: user?.autoSnoozeAfterSeconds ?? 60,
-      stickyAlarmNotification: user?.elderProfile?.stickyAlarmNotification !== false
+      stickyAlarmNotification: user?.elderProfile?.stickyAlarmNotification !== false,
+      alarmButtonOrder: normalizeAlarmButtonOrder(user?.alarmButtonOrder),
+      alarmTakeBtnColor: normalizeAlarmHexColor(user?.alarmTakeBtnColor, DEFAULT_ALARM_TAKE_BTN_COLOR),
+      alarmSnoozeBtnColor: normalizeAlarmHexColor(user?.alarmSnoozeBtnColor, DEFAULT_ALARM_SNOOZE_BTN_COLOR)
     }
   } catch (err) {
     console.warn("[getElderAlarmSettings] Error:", err)
@@ -152,7 +179,10 @@ export async function getElderAlarmSettings(elderId: string) {
       alarmSnoozeDuration: 10,
       autoSnoozeEnabled: false,
       autoSnoozeAfterSeconds: 60,
-      stickyAlarmNotification: true
+      stickyAlarmNotification: true,
+      alarmButtonOrder: DEFAULT_ALARM_BUTTON_ORDER,
+      alarmTakeBtnColor: DEFAULT_ALARM_TAKE_BTN_COLOR,
+      alarmSnoozeBtnColor: DEFAULT_ALARM_SNOOZE_BTN_COLOR
     }
   }
 }
@@ -185,7 +215,10 @@ export async function sendSilentAlarmSchedulePush(elderId: string) {
       alarmSnoozeDuration: String(settings.alarmSnoozeDuration),
       autoSnoozeEnabled: String(settings.autoSnoozeEnabled),
       autoSnoozeAfterSeconds: String(settings.autoSnoozeAfterSeconds),
-      stickyAlarmNotification: String(settings.stickyAlarmNotification)
+      stickyAlarmNotification: String(settings.stickyAlarmNotification),
+      alarmButtonOrder: settings.alarmButtonOrder,
+      alarmTakeBtnColor: settings.alarmTakeBtnColor,
+      alarmSnoozeBtnColor: settings.alarmSnoozeBtnColor
     })
   } catch (err) {
     console.warn("[sendSilentAlarmSchedulePush] Error sending push:", err)

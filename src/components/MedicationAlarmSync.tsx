@@ -82,6 +82,9 @@ interface AlarmSyncPluginNative {
     autoSnoozeEnabled: boolean
     autoSnoozeAfterSeconds: number
     stickyAlarmNotification: boolean
+    alarmButtonOrder: "TAKE_FIRST" | "SNOOZE_FIRST"
+    alarmTakeBtnColor: string
+    alarmSnoozeBtnColor: string
   }) => Promise<void>
 }
 
@@ -305,13 +308,26 @@ export function MedicationAlarmSync() {
           }
         }
 
+        const rawOrder = prefData?.alarmButtonOrder === "SNOOZE_FIRST" ? "SNOOZE_FIRST" : "TAKE_FIRST"
+        const rawTakeColor =
+          typeof prefData?.alarmTakeBtnColor === "string" && /^#[0-9A-Fa-f]{6}$/.test(prefData.alarmTakeBtnColor)
+            ? prefData.alarmTakeBtnColor.toUpperCase()
+            : "#10B981"
+        const rawSnoozeColor =
+          typeof prefData?.alarmSnoozeBtnColor === "string" && /^#[0-9A-Fa-f]{6}$/.test(prefData.alarmSnoozeBtnColor)
+            ? prefData.alarmSnoozeBtnColor.toUpperCase()
+            : "#334155"
+
         const alarmSettings = {
           elderId: userId,
           alarmSnoozeText: prefData?.alarmSnoozeText || "Take later",
           alarmSnoozeDuration: Number(prefData?.alarmSnoozeDuration ?? 10),
           autoSnoozeEnabled: prefData?.autoSnoozeEnabled === true,
           autoSnoozeAfterSeconds: Number(prefData?.autoSnoozeAfterSeconds ?? 60),
-          stickyAlarmNotification: prefData?.stickyAlarmNotification !== false
+          stickyAlarmNotification: prefData?.stickyAlarmNotification !== false,
+          alarmButtonOrder: rawOrder as "TAKE_FIRST" | "SNOOZE_FIRST",
+          alarmTakeBtnColor: rawTakeColor,
+          alarmSnoozeBtnColor: rawSnoozeColor
         }
 
         try {

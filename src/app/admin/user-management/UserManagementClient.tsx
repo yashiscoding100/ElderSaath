@@ -2,7 +2,48 @@
 
 import { useState, useMemo } from "react"
 import { useRouter } from "next/navigation"
-import { Search, SlidersHorizontal, ChevronDown, ChevronUp, CheckCircle2, AlertTriangle, ShieldAlert } from "lucide-react"
+import {
+  Search,
+  SlidersHorizontal,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle2,
+  AlertTriangle,
+  ShieldAlert,
+  ArrowUpDown,
+  RotateCcw
+} from "lucide-react"
+
+const DEFAULT_TAKE_BTN_COLOR = "#10B981"
+const DEFAULT_SNOOZE_BTN_COLOR = "#334155"
+
+const TAKE_COLOR_PRESETS = [
+  { label: "Emerald (Default)", hex: "#10B981" },
+  { label: "Royal Blue", hex: "#2563EB" },
+  { label: "Crimson Red", hex: "#DC2626" },
+  { label: "Amber Gold", hex: "#D97706" },
+  { label: "Violet", hex: "#7C3AED" },
+  { label: "Cyan Teal", hex: "#0891B2" }
+]
+
+const SNOOZE_COLOR_PRESETS = [
+  { label: "Slate (Default)", hex: "#334155" },
+  { label: "Cool Gray", hex: "#475569" },
+  { label: "Warm Amber", hex: "#D97706" },
+  { label: "Rose", hex: "#E11D48" },
+  { label: "Indigo", hex: "#4F46E5" },
+  { label: "Teal", hex: "#0D9488" }
+]
+
+function getContrastTextColor(hex: string): string {
+  if (!/^#[0-9A-Fa-f]{6}$/.test(hex)) return "#FFFFFF"
+  const clean = hex.slice(1)
+  const r = parseInt(clean.slice(0, 2), 16)
+  const g = parseInt(clean.slice(2, 4), 16)
+  const b = parseInt(clean.slice(4, 6), 16)
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+  return luminance > 0.62 ? "#0F172A" : "#FFFFFF"
+}
 
 export type ManagedUserItem = {
   id: string
@@ -19,6 +60,9 @@ export type ManagedUserItem = {
   alarmSnoozeDuration: number
   autoSnoozeEnabled: boolean
   autoSnoozeAfterSeconds: number
+  alarmButtonOrder: "TAKE_FIRST" | "SNOOZE_FIRST"
+  alarmTakeBtnColor: string
+  alarmSnoozeBtnColor: string
   stickyAlarmNotification: boolean
   linkedNames: string[]
   createdAt: string
@@ -172,6 +216,12 @@ function ManagedUserCard({
     setSaving(true)
     setStatusBanner(null)
     const nextSeconds = draft.autoSnoozeEnabled ? computedAutoSeconds : user.autoSnoozeAfterSeconds
+    const safeTakeColor = /^#[0-9A-Fa-f]{6}$/.test(draft.alarmTakeBtnColor)
+      ? draft.alarmTakeBtnColor.toUpperCase()
+      : DEFAULT_TAKE_BTN_COLOR
+    const safeSnoozeColor = /^#[0-9A-Fa-f]{6}$/.test(draft.alarmSnoozeBtnColor)
+      ? draft.alarmSnoozeBtnColor.toUpperCase()
+      : DEFAULT_SNOOZE_BTN_COLOR
 
     try {
       const res = await fetch("/api/admin/users", {
@@ -183,6 +233,9 @@ function ManagedUserCard({
           autoSnoozeAfterSeconds: nextSeconds,
           alarmSnoozeDuration: draft.alarmSnoozeDuration,
           alarmSnoozeText: draft.alarmSnoozeText,
+          alarmButtonOrder: draft.alarmButtonOrder,
+          alarmTakeBtnColor: safeTakeColor,
+          alarmSnoozeBtnColor: safeSnoozeColor,
           stickyAlarmNotification: draft.stickyAlarmNotification,
           sosEnabled: draft.sosEnabled,
           canManageMeds: draft.canManageMeds,
@@ -198,9 +251,12 @@ function ManagedUserCard({
       }
       const nextUser: ManagedUserItem = {
         ...draft,
+        alarmTakeBtnColor: safeTakeColor,
+        alarmSnoozeBtnColor: safeSnoozeColor,
         autoSnoozeAfterSeconds: nextSeconds,
         blockMessage: draft.isBlocked ? draft.blockMessage : ""
       }
+      setDraft(nextUser)
       onUserUpdated(nextUser)
       setStatusBanner({
         type: "success",
@@ -272,6 +328,13 @@ function ManagedUserCard({
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-50 text-slate-700 border border-slate-200">
                 🔔 Snooze: {user.alarmSnoozeDuration}m
               </span>
+              {(user.alarmButtonOrder === "SNOOZE_FIRST" ||
+                user.alarmTakeBtnColor !== DEFAULT_TAKE_BTN_COLOR ||
+                user.alarmSnoozeBtnColor !== DEFAULT_SNOOZE_BTN_COLOR) && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  🎨 UI: {user.alarmButtonOrder === "SNOOZE_FIRST" ? "Snooze Top" : "Take Top"}
+                </span>
+              )}
               {isElder && (
                 <span
                   className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
@@ -589,6 +652,212 @@ function ManagedUserCard({
                     />
                   </div>
                 )}
+              </div>
+
+              {/* Alarm Screen UI & Button Layout */}
+              <div className="bg-white p-4 rounded-2xl border border-indigo-200 shadow-xs space-y-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h4 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
+                      <span>🎨</span> Alarm Screen UI &amp; Button Layout
+                    </h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Set top/bottom button positions and button colors on the ringing screen.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDraft({
+                        ...draft,
+                        alarmButtonOrder: "TAKE_FIRST",
+                        alarmTakeBtnColor: DEFAULT_TAKE_BTN_COLOR,
+                        alarmSnoozeBtnColor: DEFAULT_SNOOZE_BTN_COLOR
+                      })
+                    }
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition shrink-0"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    Reset UI
+                  </button>
+                </div>
+
+                {/* Button Order Controls */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                      Button Position (Top vs Bottom)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDraft({
+                          ...draft,
+                          alarmButtonOrder: draft.alarmButtonOrder === "TAKE_FIRST" ? "SNOOZE_FIRST" : "TAKE_FIRST"
+                        })
+                      }
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-700"
+                    >
+                      <ArrowUpDown className="w-3 h-3" />
+                      Swap Order
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDraft({ ...draft, alarmButtonOrder: "TAKE_FIRST" })}
+                      className={`p-2.5 rounded-xl border text-left transition ${
+                        draft.alarmButtonOrder === "TAKE_FIRST"
+                          ? "bg-indigo-50 border-indigo-500 ring-1 ring-indigo-500"
+                          : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      <p className="text-xs font-black text-slate-900">Take Medicine Top</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">1. Take Medicine • 2. Snooze</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDraft({ ...draft, alarmButtonOrder: "SNOOZE_FIRST" })}
+                      className={`p-2.5 rounded-xl border text-left transition ${
+                        draft.alarmButtonOrder === "SNOOZE_FIRST"
+                          ? "bg-indigo-50 border-indigo-500 ring-1 ring-indigo-500"
+                          : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      <p className="text-xs font-black text-slate-900">Snooze on Top</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">1. Snooze • 2. Take Medicine</p>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Button Colors */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  {/* Take Medicine / Stop Color */}
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-700">Take Medicine Color</span>
+                      <span className="text-[10px] font-mono font-bold text-slate-500">
+                        {draft.alarmTakeBtnColor}
+                      </span>
+                    </div>
+                    <div className="flex items-center flex-wrap gap-1.5">
+                      {TAKE_COLOR_PRESETS.map((preset) => (
+                        <button
+                          key={preset.hex}
+                          type="button"
+                          title={preset.label}
+                          onClick={() => setDraft({ ...draft, alarmTakeBtnColor: preset.hex })}
+                          style={{ backgroundColor: preset.hex }}
+                          className={`w-6 h-6 rounded-full border-2 transition ${
+                            draft.alarmTakeBtnColor.toUpperCase() === preset.hex
+                              ? "border-slate-900 scale-110 ring-2 ring-indigo-300"
+                              : "border-white shadow-xs hover:scale-105"
+                          }`}
+                        />
+                      ))}
+                      <label
+                        title="Custom color picker"
+                        className="w-6 h-6 rounded-full border border-slate-300 bg-white flex items-center justify-center overflow-hidden cursor-pointer shadow-xs"
+                      >
+                        <input
+                          type="color"
+                          value={draft.alarmTakeBtnColor}
+                          onChange={(e) =>
+                            setDraft({ ...draft, alarmTakeBtnColor: e.target.value.toUpperCase() })
+                          }
+                          className="w-8 h-8 -m-1 cursor-pointer border-0 bg-transparent p-0"
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Snooze Button Color */}
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-700">Snooze Button Color</span>
+                      <span className="text-[10px] font-mono font-bold text-slate-500">
+                        {draft.alarmSnoozeBtnColor}
+                      </span>
+                    </div>
+                    <div className="flex items-center flex-wrap gap-1.5">
+                      {SNOOZE_COLOR_PRESETS.map((preset) => (
+                        <button
+                          key={preset.hex}
+                          type="button"
+                          title={preset.label}
+                          onClick={() => setDraft({ ...draft, alarmSnoozeBtnColor: preset.hex })}
+                          style={{ backgroundColor: preset.hex }}
+                          className={`w-6 h-6 rounded-full border-2 transition ${
+                            draft.alarmSnoozeBtnColor.toUpperCase() === preset.hex
+                              ? "border-slate-900 scale-110 ring-2 ring-indigo-300"
+                              : "border-white shadow-xs hover:scale-105"
+                          }`}
+                        />
+                      ))}
+                      <label
+                        title="Custom color picker"
+                        className="w-6 h-6 rounded-full border border-slate-300 bg-white flex items-center justify-center overflow-hidden cursor-pointer shadow-xs"
+                      >
+                        <input
+                          type="color"
+                          value={draft.alarmSnoozeBtnColor}
+                          onChange={(e) =>
+                            setDraft({ ...draft, alarmSnoozeBtnColor: e.target.value.toUpperCase() })
+                          }
+                          className="w-8 h-8 -m-1 cursor-pointer border-0 bg-transparent p-0"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Live Phone Alarm Screen Preview */}
+                <div className="rounded-2xl bg-gradient-to-b from-[#0F172A] to-[#1E293B] p-4 border border-slate-700 text-center space-y-2.5">
+                  <p className="text-[10px] font-extrabold tracking-widest text-sky-400">
+                    ⏰ LIVE PHONE ALARM PREVIEW
+                  </p>
+                  <p className="text-sm font-black text-white">Time for Medicine</p>
+                  <div className="flex flex-col gap-2 pt-1">
+                    {(() => {
+                      const takePreview = (
+                        <div
+                          key="take"
+                          style={{
+                            backgroundColor: draft.alarmTakeBtnColor,
+                            color: getContrastTextColor(draft.alarmTakeBtnColor)
+                          }}
+                          className="w-full py-2.5 px-3 rounded-full text-xs font-black tracking-wide shadow"
+                        >
+                          TAKE MEDICINE / STOP ALARM
+                        </div>
+                      )
+                      const snoozePreview = (
+                        <div
+                          key="snooze"
+                          style={{
+                            backgroundColor: draft.alarmSnoozeBtnColor,
+                            color: getContrastTextColor(draft.alarmSnoozeBtnColor)
+                          }}
+                          className="w-full py-2 px-3 rounded-full text-[11px] font-bold border border-white/25 shadow-xs"
+                        >
+                          {(draft.alarmSnoozeText || "Take later").trim()} ({draft.alarmSnoozeDuration} mins)
+                        </div>
+                      )
+                      return draft.alarmButtonOrder === "SNOOZE_FIRST"
+                        ? [snoozePreview, takePreview]
+                        : [takePreview, snoozePreview]
+                    })()}
+                  </div>
+                  {draft.autoSnoozeEnabled && (
+                    <p className="text-[10px] font-bold text-slate-300 pt-0.5">
+                      ⏱️ Auto-snoozing in {computedAutoSeconds}s if no response...
+                    </p>
+                  )}
+                  <p className="text-[10px] text-slate-400">
+                    Emergency SOS alarms keep their fixed red emergency layout for safety.
+                  </p>
+                </div>
               </div>
             </div>
           </div>

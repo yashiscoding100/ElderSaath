@@ -65,6 +65,23 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
         int autoSnoozeAfterSeconds = intent.hasExtra("autoSnoozeAfterSeconds")
             ? intent.getIntExtra("autoSnoozeAfterSeconds", 60)
             : AlarmScheduler.getAutoSnoozeAfterSeconds(context, elderId);
+        String alarmButtonOrder = AlarmScheduler.sanitizeButtonOrder(
+            intent.hasExtra("alarmButtonOrder")
+                ? intent.getStringExtra("alarmButtonOrder")
+                : AlarmScheduler.getAlarmButtonOrder(context, elderId)
+        );
+        String alarmTakeBtnColor = AlarmScheduler.sanitizeHexColor(
+            intent.hasExtra("alarmTakeBtnColor")
+                ? intent.getStringExtra("alarmTakeBtnColor")
+                : AlarmScheduler.getAlarmTakeBtnColor(context, elderId),
+            AlarmScheduler.DEFAULT_TAKE_BTN_COLOR
+        );
+        String alarmSnoozeBtnColor = AlarmScheduler.sanitizeHexColor(
+            intent.hasExtra("alarmSnoozeBtnColor")
+                ? intent.getStringExtra("alarmSnoozeBtnColor")
+                : AlarmScheduler.getAlarmSnoozeBtnColor(context, elderId),
+            AlarmScheduler.DEFAULT_SNOOZE_BTN_COLOR
+        );
 
         // 2. Prevent duplicate alarm storm with FCM cloud push (only for initial alarms, not user snoozes)
         long lastFired = prefs.getLong("last_alarm_fired_timestamp", 0);
@@ -145,6 +162,9 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
         alarmIntent.putExtra("snoozeDuration", snoozeDuration);
         alarmIntent.putExtra("autoSnoozeEnabled", autoSnoozeEnabled);
         alarmIntent.putExtra("autoSnoozeAfterSeconds", autoSnoozeAfterSeconds);
+        alarmIntent.putExtra("alarmButtonOrder", alarmButtonOrder);
+        alarmIntent.putExtra("alarmTakeBtnColor", alarmTakeBtnColor);
+        alarmIntent.putExtra("alarmSnoozeBtnColor", alarmSnoozeBtnColor);
         alarmIntent.putExtra("elderId", elderId);
         alarmIntent.putExtra("medicationId", medicationId);
         alarmIntent.putExtra("type", type);

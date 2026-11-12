@@ -10,6 +10,9 @@ export async function GET() {
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "canManageMeds" BOOLEAN NOT NULL DEFAULT false;`)
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "autoSnoozeEnabled" BOOLEAN NOT NULL DEFAULT false;`)
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "autoSnoozeAfterSeconds" INTEGER NOT NULL DEFAULT 60;`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "alarmButtonOrder" TEXT NOT NULL DEFAULT 'TAKE_FIRST';`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "alarmTakeBtnColor" TEXT NOT NULL DEFAULT '#10B981';`)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "alarmSnoozeBtnColor" TEXT NOT NULL DEFAULT '#334155';`)
     
     // Add Task columns
     await prisma.$executeRawUnsafe(`ALTER TABLE "Task" ADD COLUMN IF NOT EXISTS "time" TEXT;`)

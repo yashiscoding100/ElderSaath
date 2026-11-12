@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
+import {
+  DEFAULT_ALARM_SNOOZE_BTN_COLOR,
+  DEFAULT_ALARM_TAKE_BTN_COLOR,
+  normalizeAlarmButtonOrder,
+  normalizeAlarmHexColor
+} from "@/lib/alarmSync"
 
 export async function PATCH(req: Request) {
   try {
@@ -23,7 +29,11 @@ export async function PATCH(req: Request) {
       if (!relationship) return NextResponse.json({ message: "Unauthorized for this elder" }, { status: 403 })
     }
 
-    const updateData: any = {}
+    const updateData: {
+      requiredVitals?: string
+      askSymptoms?: boolean
+      stickyAlarmNotification?: boolean
+    } = {}
     if (body.requiredVitals !== undefined) updateData.requiredVitals = body.requiredVitals
     if (body.askSymptoms !== undefined) updateData.askSymptoms = body.askSymptoms
     if (body.stickyAlarmNotification !== undefined) updateData.stickyAlarmNotification = body.stickyAlarmNotification
@@ -72,7 +82,10 @@ export async function GET(req: Request) {
           alarmSnoozeText: true,
           alarmSnoozeDuration: true,
           autoSnoozeEnabled: true,
-          autoSnoozeAfterSeconds: true
+          autoSnoozeAfterSeconds: true,
+          alarmButtonOrder: true,
+          alarmTakeBtnColor: true,
+          alarmSnoozeBtnColor: true
         }
       })
     ])
@@ -84,7 +97,10 @@ export async function GET(req: Request) {
       alarmSnoozeText: user?.alarmSnoozeText || "Take later",
       alarmSnoozeDuration: user?.alarmSnoozeDuration ?? 10,
       autoSnoozeEnabled: user?.autoSnoozeEnabled ?? false,
-      autoSnoozeAfterSeconds: user?.autoSnoozeAfterSeconds ?? 60
+      autoSnoozeAfterSeconds: user?.autoSnoozeAfterSeconds ?? 60,
+      alarmButtonOrder: normalizeAlarmButtonOrder(user?.alarmButtonOrder),
+      alarmTakeBtnColor: normalizeAlarmHexColor(user?.alarmTakeBtnColor, DEFAULT_ALARM_TAKE_BTN_COLOR),
+      alarmSnoozeBtnColor: normalizeAlarmHexColor(user?.alarmSnoozeBtnColor, DEFAULT_ALARM_SNOOZE_BTN_COLOR)
     })
   } catch (error) {
     console.error("Error fetching preferences:", error)

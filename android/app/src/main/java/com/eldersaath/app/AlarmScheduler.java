@@ -30,6 +30,27 @@ public class AlarmScheduler {
     private static final String PREF_NAME = "ElderSaathAlarms";
     private static final String KEY_SAVED_MEDS = "saved_medications";
     private static final String KEY_SCHEDULED_IDS = "scheduled_ids";
+    public static final String DEFAULT_BUTTON_ORDER = "TAKE_FIRST";
+    public static final String DEFAULT_TAKE_BTN_COLOR = "#10B981";
+    public static final String DEFAULT_SNOOZE_BTN_COLOR = "#334155";
+    private static final Pattern HEX_COLOR_PATTERN = Pattern.compile("^#[0-9A-Fa-f]{6}$");
+
+    public static String sanitizeButtonOrder(String val) {
+        if (val != null && "SNOOZE_FIRST".equalsIgnoreCase(val.trim())) {
+            return "SNOOZE_FIRST";
+        }
+        return DEFAULT_BUTTON_ORDER;
+    }
+
+    public static String sanitizeHexColor(String val, String fallback) {
+        if (val != null) {
+            String trimmed = val.trim();
+            if (HEX_COLOR_PATTERN.matcher(trimmed).matches()) {
+                return trimmed.toUpperCase();
+            }
+        }
+        return fallback;
+    }
 
     public static int getRequestCode(String id) {
         if (id == null) return 1000;
@@ -507,11 +528,29 @@ public class AlarmScheduler {
     }
 
     /**
-     * Persists child-configured snooze settings and admin-configured auto-snooze settings directly in phone memory.
+     * Persists child-configured snooze settings and admin-configured auto-snooze & button layout settings directly in phone memory.
      */
     public static void saveAlarmSettings(Context context, String elderId, String snoozeText,
                                          int snoozeDuration, boolean autoSnoozeEnabled,
                                          int autoSnoozeAfterSeconds, boolean stickyNotification) {
+        saveAlarmSettings(
+            context,
+            elderId,
+            snoozeText,
+            snoozeDuration,
+            autoSnoozeEnabled,
+            autoSnoozeAfterSeconds,
+            stickyNotification,
+            null,
+            null,
+            null
+        );
+    }
+
+    public static void saveAlarmSettings(Context context, String elderId, String snoozeText,
+                                         int snoozeDuration, boolean autoSnoozeEnabled,
+                                         int autoSnoozeAfterSeconds, boolean stickyNotification,
+                                         String buttonOrder, String takeBtnColor, String snoozeBtnColor) {
         if (context == null) return;
         SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
         SharedPreferences.Editor editor = prefs.edit();
@@ -520,12 +559,25 @@ public class AlarmScheduler {
         int safeAutoSec = Math.max(5, autoSnoozeAfterSeconds);
         String safeSnoozeText = (snoozeText != null && !snoozeText.trim().isEmpty()) ? snoozeText : "Take later";
 
+        String resolvedButtonOrder = (buttonOrder != null && !buttonOrder.trim().isEmpty())
+            ? sanitizeButtonOrder(buttonOrder)
+            : getAlarmButtonOrder(context, elderId);
+        String resolvedTakeColor = (takeBtnColor != null && HEX_COLOR_PATTERN.matcher(takeBtnColor.trim()).matches())
+            ? takeBtnColor.trim().toUpperCase()
+            : getAlarmTakeBtnColor(context, elderId);
+        String resolvedSnoozeColor = (snoozeBtnColor != null && HEX_COLOR_PATTERN.matcher(snoozeBtnColor.trim()).matches())
+            ? snoozeBtnColor.trim().toUpperCase()
+            : getAlarmSnoozeBtnColor(context, elderId);
+
         // Global active keys
         editor.putString("alarm_snooze_text", safeSnoozeText);
         editor.putInt("alarm_snooze_duration", safeSnoozeDuration);
         editor.putBoolean("auto_snooze_enabled", autoSnoozeEnabled);
         editor.putInt("auto_snooze_after_seconds", safeAutoSec);
         editor.putBoolean("sticky_alarm_notification", stickyNotification);
+        editor.putString("alarm_button_order", resolvedButtonOrder);
+        editor.putString("alarm_take_btn_color", resolvedTakeColor);
+        editor.putString("alarm_snooze_btn_color", resolvedSnoozeColor);
 
         // Per-account keys
         if (elderId != null && !elderId.trim().isEmpty()) {
@@ -536,13 +588,55 @@ public class AlarmScheduler {
             editor.putBoolean("auto_snooze_enabled" + keySuffix, autoSnoozeEnabled);
             editor.putInt("auto_snooze_after_seconds" + keySuffix, safeAutoSec);
             editor.putBoolean("sticky_alarm_notification" + keySuffix, stickyNotification);
+            editor.putString("alarm_button_order" + keySuffix, resolvedButtonOrder);
+            editor.putString("alarm_take_btn_color" + keySuffix, resolvedTakeColor);
+            editor.putString("alarm_snooze_btn_color" + keySuffix, resolvedSnoozeColor);
         }
 
         editor.apply();
-        Log.i(TAG, "Saved alarm & auto-snooze config in phone memory [elderId=" + elderId +
+        Log.i(TAG, "Saved alarm, auto-snooze & button UI config in phone memory [elderId=" + elderId +
               ", autoSnoozeEnabled=" + autoSnoozeEnabled +
               ", autoSnoozeAfterSec=" + safeAutoSec +
-              ", childSnoozeDurationMin=" + safeSnoozeDuration + "]");
+              ", childSnoozeDurationMin=" + safeSnoozeDuration +
+              ", buttonOrder=" + resolvedButtonOrder +
+              ", takeColor=" + resolvedTakeColor +
+              ", snoozeColor=" + resolvedSnoozeColor + "]");
+    }
+
+    public static String getAlarmButtonOrder(Context context, String elderId) {
+        if (context == null) return DEFAULT_BUTTON_ORDER;
+        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        if (elderId != null && !elderId.trim().isEmpty()) {
+            String key = "alarm_button_order_" + elderId.trim();
+            if (prefs.contains(key)) {
+                return sanitizeButtonOrder(prefs.getString(key, DEFAULT_BUTTON_ORDER));
+            }
+        }
+        return sanitizeButtonOrder(prefs.getString("alarm_button_order", DEFAULT_BUTTON_ORDER));
+    }
+
+    public static String getAlarmTakeBtnColor(Context context, String elderId) {
+        if (context == null) return DEFAULT_TAKE_BTN_COLOR;
+        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        if (elderId != null && !elderId.trim().isEmpty()) {
+            String key = "alarm_take_btn_color_" + elderId.trim();
+            if (prefs.contains(key)) {
+                return sanitizeHexColor(prefs.getString(key, DEFAULT_TAKE_BTN_COLOR), DEFAULT_TAKE_BTN_COLOR);
+            }
+        }
+        return sanitizeHexColor(prefs.getString("alarm_take_btn_color", DEFAULT_TAKE_BTN_COLOR), DEFAULT_TAKE_BTN_COLOR);
+    }
+
+    public static String getAlarmSnoozeBtnColor(Context context, String elderId) {
+        if (context == null) return DEFAULT_SNOOZE_BTN_COLOR;
+        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        if (elderId != null && !elderId.trim().isEmpty()) {
+            String key = "alarm_snooze_btn_color_" + elderId.trim();
+            if (prefs.contains(key)) {
+                return sanitizeHexColor(prefs.getString(key, DEFAULT_SNOOZE_BTN_COLOR), DEFAULT_SNOOZE_BTN_COLOR);
+            }
+        }
+        return sanitizeHexColor(prefs.getString("alarm_snooze_btn_color", DEFAULT_SNOOZE_BTN_COLOR), DEFAULT_SNOOZE_BTN_COLOR);
     }
 
     public static boolean isAutoSnoozeEnabled(Context context, String elderId) {

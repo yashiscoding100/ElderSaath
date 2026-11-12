@@ -7,6 +7,8 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
@@ -21,6 +23,7 @@ import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.util.Log;
+import android.util.TypedValue;
 import android.view.View;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
@@ -164,6 +167,24 @@ public class AlarmActivity extends Activity {
             ? getIntent().getIntExtra("autoSnoozeAfterSeconds", 60)
             : AlarmScheduler.getAutoSnoozeAfterSeconds(this, elderId));
 
+        final String alarmButtonOrder = AlarmScheduler.sanitizeButtonOrder(
+            getIntent().hasExtra("alarmButtonOrder")
+                ? getIntent().getStringExtra("alarmButtonOrder")
+                : AlarmScheduler.getAlarmButtonOrder(this, elderId)
+        );
+        final String alarmTakeBtnColor = AlarmScheduler.sanitizeHexColor(
+            getIntent().hasExtra("alarmTakeBtnColor")
+                ? getIntent().getStringExtra("alarmTakeBtnColor")
+                : AlarmScheduler.getAlarmTakeBtnColor(this, elderId),
+            AlarmScheduler.DEFAULT_TAKE_BTN_COLOR
+        );
+        final String alarmSnoozeBtnColor = AlarmScheduler.sanitizeHexColor(
+            getIntent().hasExtra("alarmSnoozeBtnColor")
+                ? getIntent().getStringExtra("alarmSnoozeBtnColor")
+                : AlarmScheduler.getAlarmSnoozeBtnColor(this, elderId),
+            AlarmScheduler.DEFAULT_SNOOZE_BTN_COLOR
+        );
+
         // 3. CPU WakeLock for duration of alarm + auto-snooze countdown
         try {
             PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
@@ -213,6 +234,7 @@ public class AlarmActivity extends Activity {
         TextView bodyView = findViewById(R.id.tvAlarmBody);
         Button stopBtn = findViewById(R.id.btnStopAlarm);
         Button snoozeBtn = findViewById(R.id.btnSnoozeAlarm);
+        LinearLayout layoutAlarmButtonsInner = findViewById(R.id.layoutAlarmButtonsInner);
         final TextView autoSnoozeStatusView = findViewById(R.id.tvAutoSnoozeStatus);
 
         if (label.contains("SOS") || label.contains("EMERGENCY")) {
@@ -235,6 +257,18 @@ public class AlarmActivity extends Activity {
             displaySnooze = displaySnooze + " (" + snoozeDuration + " mins)";
         }
         snoozeBtn.setText(displaySnooze);
+
+        boolean isSosUiLock = label.contains("EMERGENCY SOS") || label.contains("SOS") || "EMERGENCY_SOS".equalsIgnoreCase(finalAlarmType);
+        if (!isSosUiLock) {
+            applyCustomAlarmButtonUi(
+                layoutAlarmButtonsInner,
+                stopBtn,
+                snoozeBtn,
+                alarmButtonOrder,
+                alarmTakeBtnColor,
+                alarmSnoozeBtnColor
+            );
+        }
 
         final String finalActionText = actionText;
         final String finalLabel = label;
@@ -266,6 +300,9 @@ public class AlarmActivity extends Activity {
                 snoozeIntent.putExtra("snoozeDuration", snoozeDuration);
                 snoozeIntent.putExtra("autoSnoozeEnabled", autoSnoozeEnabled);
                 snoozeIntent.putExtra("autoSnoozeAfterSeconds", autoSnoozeAfterSeconds);
+                snoozeIntent.putExtra("alarmButtonOrder", alarmButtonOrder);
+                snoozeIntent.putExtra("alarmTakeBtnColor", alarmTakeBtnColor);
+                snoozeIntent.putExtra("alarmSnoozeBtnColor", alarmSnoozeBtnColor);
                 snoozeIntent.putExtra("medicationId", finalMedicationId);
                 snoozeIntent.putExtra("name", finalLabel);
                 snoozeIntent.putExtra("type", finalAlarmType);
@@ -449,6 +486,73 @@ public class AlarmActivity extends Activity {
 
         // 6. Start Single Continuous Sound and Aggressive Vibration
         startAlarmSoundAndVibration();
+    }
+
+    private void applyCustomAlarmButtonUi(
+        LinearLayout buttonsContainer,
+        Button stopBtn,
+        Button snoozeBtn,
+        String buttonOrder,
+        String takeBtnColor,
+        String snoozeBtnColor
+    ) {
+        try {
+            if (stopBtn != null && !AlarmScheduler.DEFAULT_TAKE_BTN_COLOR.equalsIgnoreCase(takeBtnColor)) {
+                applyButtonBackgroundAndContrast(stopBtn, takeBtnColor, false);
+            }
+            if (snoozeBtn != null && !AlarmScheduler.DEFAULT_SNOOZE_BTN_COLOR.equalsIgnoreCase(snoozeBtnColor)) {
+                applyButtonBackgroundAndContrast(snoozeBtn, snoozeBtnColor, true);
+            }
+
+            if ("SNOOZE_FIRST".equals(buttonOrder) && buttonsContainer != null && stopBtn != null && snoozeBtn != null) {
+                buttonsContainer.removeView(stopBtn);
+                buttonsContainer.removeView(snoozeBtn);
+
+                LinearLayout.LayoutParams snoozeLp = (LinearLayout.LayoutParams) snoozeBtn.getLayoutParams();
+                LinearLayout.LayoutParams stopLp = (LinearLayout.LayoutParams) stopBtn.getLayoutParams();
+                int margin16Dp = (int) TypedValue.applyDimension(
+                    TypedValue.COMPLEX_UNIT_DIP, 16f, getResources().getDisplayMetrics()
+                );
+                if (snoozeLp != null) snoozeLp.bottomMargin = margin16Dp;
+                if (stopLp != null) stopLp.bottomMargin = 0;
+
+                buttonsContainer.addView(snoozeBtn, snoozeLp);
+                buttonsContainer.addView(stopBtn, stopLp);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Non-fatal error applying custom alarm button UI; keeping XML defaults", e);
+        }
+    }
+
+    private void applyButtonBackgroundAndContrast(Button btn, String hexColor, boolean isSnoozeButton) {
+        if (btn == null || hexColor == null) return;
+        int bgColor = Color.parseColor(hexColor);
+        float radiusPx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP, 28f, getResources().getDisplayMetrics()
+        );
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setShape(GradientDrawable.RECTANGLE);
+        drawable.setColor(bgColor);
+        drawable.setCornerRadius(radiusPx);
+
+        double lum = (0.299 * Color.red(bgColor) + 0.587 * Color.green(bgColor) + 0.114 * Color.blue(bgColor)) / 255.0;
+        if (isSnoozeButton || lum < 0.10) {
+            int strokePx = Math.max(2, (int) TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, 2f, getResources().getDisplayMetrics()
+            ));
+            int strokeColor = lum > 0.62 ? Color.argb(75, 15, 23, 42) : Color.argb(95, 255, 255, 255);
+            drawable.setStroke(strokePx, strokeColor);
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            btn.setBackgroundTintList(null);
+        }
+        btn.setBackground(drawable);
+        btn.setTextColor(
+            lum > 0.62
+                ? Color.parseColor("#0F172A")
+                : Color.parseColor(isSnoozeButton ? "#F1F5F9" : "#FFFFFF")
+        );
     }
 
     private void playSpecialNoticeVoice(final String medId, final String audioUrl, final String version, final TextView statusView) {

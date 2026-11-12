@@ -2,7 +2,13 @@ import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { sendPushNotification } from "@/lib/push"
-import { resolveCompactNoticeAudioUrl } from "@/lib/alarmSync"
+import {
+  DEFAULT_ALARM_SNOOZE_BTN_COLOR,
+  DEFAULT_ALARM_TAKE_BTN_COLOR,
+  normalizeAlarmButtonOrder,
+  normalizeAlarmHexColor,
+  resolveCompactNoticeAudioUrl
+} from "@/lib/alarmSync"
 
 export const dynamic = "force-dynamic"
 
@@ -37,6 +43,9 @@ export async function POST(req: Request) {
       snoozeDuration: (med.elder.alarmSnoozeDuration || 10).toString(),
       autoSnoozeEnabled: String(med.elder.autoSnoozeEnabled === true),
       autoSnoozeAfterSeconds: String(med.elder.autoSnoozeAfterSeconds ?? 60),
+      alarmButtonOrder: normalizeAlarmButtonOrder(med.elder.alarmButtonOrder),
+      alarmTakeBtnColor: normalizeAlarmHexColor(med.elder.alarmTakeBtnColor, DEFAULT_ALARM_TAKE_BTN_COLOR),
+      alarmSnoozeBtnColor: normalizeAlarmHexColor(med.elder.alarmSnoozeBtnColor, DEFAULT_ALARM_SNOOZE_BTN_COLOR),
       elderId: med.elderId,
       stickyNotification: med.elder.elderProfile?.stickyAlarmNotification !== false ? "true" : "false",
       specialNoticeEnabled: med.specialNoticeEnabled ? "true" : "false",

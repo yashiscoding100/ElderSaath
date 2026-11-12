@@ -27,15 +27,31 @@ export async function sendAdminNotification(userId: string, title: string, body:
   try {
     let autoSnoozeEnabled = false
     let autoSnoozeAfterSeconds = 60
+    let alarmButtonOrder = "TAKE_FIRST"
+    let alarmTakeBtnColor = "#10B981"
+    let alarmSnoozeBtnColor = "#334155"
 
     if (isAlarm && userId !== "ALL") {
       const targetUser = await prisma.user.findUnique({
         where: { id: userId },
-        select: { autoSnoozeEnabled: true, autoSnoozeAfterSeconds: true }
+        select: {
+          autoSnoozeEnabled: true,
+          autoSnoozeAfterSeconds: true,
+          alarmButtonOrder: true,
+          alarmTakeBtnColor: true,
+          alarmSnoozeBtnColor: true
+        }
       })
       if (targetUser) {
         autoSnoozeEnabled = targetUser.autoSnoozeEnabled
         autoSnoozeAfterSeconds = targetUser.autoSnoozeAfterSeconds
+        alarmButtonOrder = targetUser.alarmButtonOrder === "SNOOZE_FIRST" ? "SNOOZE_FIRST" : "TAKE_FIRST"
+        alarmTakeBtnColor = /^#[0-9A-Fa-f]{6}$/.test(targetUser.alarmTakeBtnColor || "")
+          ? targetUser.alarmTakeBtnColor.toUpperCase()
+          : "#10B981"
+        alarmSnoozeBtnColor = /^#[0-9A-Fa-f]{6}$/.test(targetUser.alarmSnoozeBtnColor || "")
+          ? targetUser.alarmSnoozeBtnColor.toUpperCase()
+          : "#334155"
       }
     }
 
@@ -50,7 +66,10 @@ export async function sendAdminNotification(userId: string, title: string, body:
       ...(userId !== "ALL" ? { elderId: userId } : {}),
       ...(isAlarm && userId !== "ALL" ? {
         autoSnoozeEnabled: String(autoSnoozeEnabled),
-        autoSnoozeAfterSeconds: String(autoSnoozeAfterSeconds)
+        autoSnoozeAfterSeconds: String(autoSnoozeAfterSeconds),
+        alarmButtonOrder,
+        alarmTakeBtnColor,
+        alarmSnoozeBtnColor
       } : {})
     }
 

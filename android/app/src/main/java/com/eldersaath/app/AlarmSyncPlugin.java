@@ -344,6 +344,9 @@ public class AlarmSyncPlugin extends Plugin {
             ret.put("autoSnoozeEnabled", AlarmScheduler.isAutoSnoozeEnabled(getContext(), elderId));
             ret.put("autoSnoozeAfterSeconds", AlarmScheduler.getAutoSnoozeAfterSeconds(getContext(), elderId));
             ret.put("alarmSnoozeDuration", AlarmScheduler.getChildSnoozeDuration(getContext(), elderId));
+            ret.put("alarmButtonOrder", AlarmScheduler.getAlarmButtonOrder(getContext(), elderId));
+            ret.put("alarmTakeBtnColor", AlarmScheduler.getAlarmTakeBtnColor(getContext(), elderId));
+            ret.put("alarmSnoozeBtnColor", AlarmScheduler.getAlarmSnoozeBtnColor(getContext(), elderId));
             call.resolve(ret);
         } catch (Exception e) {
             call.reject("Failed to get scheduled alarms: " + e.getMessage());
@@ -359,6 +362,9 @@ public class AlarmSyncPlugin extends Plugin {
             Boolean autoSnoozeEnabled = call.getBoolean("autoSnoozeEnabled", false);
             Integer autoSnoozeAfterSeconds = call.getInt("autoSnoozeAfterSeconds", 60);
             Boolean stickyNotification = call.getBoolean("stickyAlarmNotification", true);
+            String buttonOrder = call.getString("alarmButtonOrder", null);
+            String takeBtnColor = call.getString("alarmTakeBtnColor", null);
+            String snoozeBtnColor = call.getString("alarmSnoozeBtnColor", null);
 
             AlarmScheduler.saveAlarmSettings(
                 getContext(),
@@ -367,13 +373,19 @@ public class AlarmSyncPlugin extends Plugin {
                 snoozeDuration != null ? snoozeDuration : 10,
                 autoSnoozeEnabled != null && autoSnoozeEnabled,
                 autoSnoozeAfterSeconds != null ? autoSnoozeAfterSeconds : 60,
-                stickyNotification == null || stickyNotification
+                stickyNotification == null || stickyNotification,
+                buttonOrder,
+                takeBtnColor,
+                snoozeBtnColor
             );
 
             JSObject ret = new JSObject();
             ret.put("success", true);
             ret.put("autoSnoozeEnabled", autoSnoozeEnabled != null && autoSnoozeEnabled);
             ret.put("autoSnoozeAfterSeconds", autoSnoozeAfterSeconds != null ? autoSnoozeAfterSeconds : 60);
+            ret.put("alarmButtonOrder", AlarmScheduler.getAlarmButtonOrder(getContext(), elderId));
+            ret.put("alarmTakeBtnColor", AlarmScheduler.getAlarmTakeBtnColor(getContext(), elderId));
+            ret.put("alarmSnoozeBtnColor", AlarmScheduler.getAlarmSnoozeBtnColor(getContext(), elderId));
             call.resolve(ret);
         } catch (Exception e) {
             Log.e(TAG, "Failed to sync alarm settings", e);
