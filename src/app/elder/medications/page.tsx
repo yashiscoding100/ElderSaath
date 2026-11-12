@@ -7,6 +7,7 @@ import { ElderAddMedicationForm } from "./ElderAddMedicationForm"
 import { MarkTakenButton } from "./MarkTakenButton"
 import { ElderDeleteMedicationButton } from "./ElderDeleteMedicationButton"
 import { MedicationsPageRefresher } from "./MedicationsPageRefresher"
+import { MedicationNotepad, MedicationNoteItem } from "@/components/medications/MedicationNotepad"
 import { checkAndNotifyExpiredMedications, formatDurationSummary, isMedicationExpired } from "@/lib/medicationDuration"
 
 export default async function ElderMedications() {
@@ -36,6 +37,31 @@ export default async function ElderMedications() {
     }
   })
 
+  let serializedNotes: MedicationNoteItem[] = []
+  try {
+    const rawNotes = await prisma.medicationNote.findMany({
+      where: { elderId: session.user.id },
+      orderBy: { updatedAt: "desc" }
+    })
+    serializedNotes = rawNotes.map((n) => ({
+      id: n.id,
+      elderId: n.elderId,
+      authorName: n.authorName,
+      authorRole: n.authorRole,
+      medicineName: n.medicineName,
+      timingText: n.timingText,
+      doctorName: n.doctorName,
+      durationText: n.durationText,
+      notes: n.notes,
+      createdAt: n.createdAt.toISOString(),
+      updatedAt: n.updatedAt.toISOString()
+    }))
+  } catch (err) {
+    console.warn("[ElderMedications] Could not load medication notes:", err)
+  }
+
+  const notepadKey = `${session.user.id}-${serializedNotes.map((n) => `${n.id}:${n.updatedAt}`).join("|")}`
+
   const activeMedications = medications.filter(m => !isMedicationExpired(m.endDate))
   const takenToday = activeMedications.filter(m => m.logs.some(l => l.status === "TAKEN")).length
   const total = activeMedications.length
@@ -47,10 +73,18 @@ export default async function ElderMedications() {
         <Link href="/elder/home" className="absolute left-4 top-4 p-2.5 bg-slate-100 hover:bg-slate-200 rounded-full transition text-slate-700 shadow-sm" title="Back to Home">
           <ArrowLeft className="w-6 h-6" />
         </Link>
-        <h1 className="text-3xl font-extrabold text-gray-900">Today's Medicines</h1>
+        <h1 className="text-3xl font-extrabold text-gray-900">Today&apos;s Medicines</h1>
         {total > 0 && (
           <p className="text-lg text-gray-500 mt-2">{takenToday}/{total} active completed</p>
         )}
+        <div className="mt-3">
+          <a
+            href="#medicine-notepad"
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-200 font-bold text-sm transition"
+          >
+            📝 Open Medicine Notepad ({serializedNotes.length})
+          </a>
+        </div>
       </div>
 
       <div className="w-full max-w-md">
@@ -134,6 +168,17 @@ export default async function ElderMedications() {
         )}
       </div>
       
+      <div className="w-full max-w-md mt-6">
+        <MedicationNotepad
+          key={notepadKey}
+          id="medicine-notepad"
+          elderId={session.user.id}
+          elderName={userProfile?.name || session.user.name}
+          initialNotes={serializedNotes}
+          variant="elder"
+        />
+      </div>
+
       <div className="w-full max-w-md pt-6">
         <a href="/elder/home" className="block w-full py-4 text-center bg-gray-200 text-gray-800 font-bold rounded-2xl text-xl hover:bg-gray-300 transition-colors">
           Back Home

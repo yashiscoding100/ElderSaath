@@ -44,6 +44,8 @@ model User {
   measurements   HealthMeasurement[]
   medications    Medication[]
   medicationLogs MedicationLog[]
+  medicationNotes    MedicationNote[] @relation("ElderMedicationNotes")
+  authoredMedNotes   MedicationNote[] @relation("AuthoredMedicationNotes")
   elderTasks     Task[]              @relation("ElderTasks")
   assignedTasks  Task[]              @relation("AssignedTasks")
 
@@ -168,6 +170,27 @@ model MedicationLog {
 
   status    String // "TAKEN", "MISSED", "SKIPPED", "SNOOZED"
   timestamp DateTime @default(now())
+}
+
+model MedicationNote {
+  id         String   @id @default(cuid())
+  elderId    String
+  elder      User     @relation("ElderMedicationNotes", fields: [elderId], references: [id], onDelete: Cascade)
+  authorId   String?
+  author     User?    @relation("AuthoredMedicationNotes", fields: [authorId], references: [id], onDelete: SetNull)
+  authorName String?
+  authorRole String?
+
+  medicineName String?
+  timingText   String?
+  doctorName   String?
+  durationText String?
+  notes        String?  @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([elderId, updatedAt])
 }
 
 model Task {

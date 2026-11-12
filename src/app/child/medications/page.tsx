@@ -4,6 +4,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { getActiveElder } from "@/lib/activeElder"
 import { resolveCompactNoticeAudioUrl } from "@/lib/alarmSync"
+import { MedicationNotepad, MedicationNoteItem } from "@/components/medications/MedicationNotepad"
 import { redirect } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
@@ -31,6 +32,31 @@ export default async function ChildMedications() {
     orderBy: { createdAt: "desc" }
   })
 
+  let serializedNotes: MedicationNoteItem[] = []
+  try {
+    const rawNotes = await prisma.medicationNote.findMany({
+      where: { elderId: relationship.elderId },
+      orderBy: { updatedAt: "desc" }
+    })
+    serializedNotes = rawNotes.map((n) => ({
+      id: n.id,
+      elderId: n.elderId,
+      authorName: n.authorName,
+      authorRole: n.authorRole,
+      medicineName: n.medicineName,
+      timingText: n.timingText,
+      doctorName: n.doctorName,
+      durationText: n.durationText,
+      notes: n.notes,
+      createdAt: n.createdAt.toISOString(),
+      updatedAt: n.updatedAt.toISOString()
+    }))
+  } catch (err) {
+    console.warn("[ChildMedications] Could not load medication notes:", err)
+  }
+
+  const notepadKey = `${relationship.elderId}-${serializedNotes.map((n) => `${n.id}:${n.updatedAt}`).join("|")}`
+
   // Keep RSC payload lightweight by serving stored audio via API URL
   const medications = rawMedications.map(m => ({
     ...m,
@@ -41,7 +67,7 @@ export default async function ChildMedications() {
 
   return (
     <div className="space-y-6">
-      <header className="flex justify-between items-center mb-6">
+      <header className="flex flex-wrap justify-between items-center gap-3 mb-6">
         <div className="flex items-center gap-3">
           <Link 
             href="/child/dashboard" 
@@ -55,7 +81,13 @@ export default async function ChildMedications() {
             <p className="text-sm text-slate-500 mt-0.5">Manage {relationship.elder.name}&apos;s daily prescriptions.</p>
           </div>
         </div>
-        <div className="flex gap-4 items-center">
+        <div className="flex flex-wrap gap-3 items-center">
+           <a
+             href="#medicine-notepad"
+             className="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-sm font-bold transition"
+           >
+             📝 Notepad ({serializedNotes.length})
+           </a>
            <AddMedicineForm elderId={relationship.elderId} />
         </div>
       </header>
@@ -91,6 +123,15 @@ export default async function ChildMedications() {
           </div>
         )}
       </div>
+
+      <MedicationNotepad
+        key={notepadKey}
+        id="medicine-notepad"
+        elderId={relationship.elderId}
+        elderName={relationship.elder.name}
+        initialNotes={serializedNotes}
+        variant="child"
+      />
     </div>
   )
 }

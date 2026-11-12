@@ -39,6 +39,28 @@ export async function GET() {
     await prisma.$executeRawUnsafe(`ALTER TABLE "Medication" ADD COLUMN IF NOT EXISTS "specialNoticeShownCount" INTEGER NOT NULL DEFAULT 0;`)
     await prisma.$executeRawUnsafe(`ALTER TABLE "Medication" ADD COLUMN IF NOT EXISTS "specialNoticeVersion" TEXT;`)
 
+    // Create MedicationNote notepad table (separate from alarms)
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "MedicationNote" (
+        "id" TEXT NOT NULL,
+        "elderId" TEXT NOT NULL,
+        "authorId" TEXT,
+        "authorName" TEXT,
+        "authorRole" TEXT,
+        "medicineName" TEXT,
+        "timingText" TEXT,
+        "doctorName" TEXT,
+        "durationText" TEXT,
+        "notes" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "MedicationNote_pkey" PRIMARY KEY ("id"),
+        CONSTRAINT "MedicationNote_elderId_fkey" FOREIGN KEY ("elderId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+        CONSTRAINT "MedicationNote_authorId_fkey" FOREIGN KEY ("authorId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE
+      );
+    `)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MedicationNote_elderId_updatedAt_idx" ON "MedicationNote"("elderId", "updatedAt");`)
+
     return NextResponse.json({ 
       success: true, 
       message: "Database updated successfully! All schema changes applied." 
