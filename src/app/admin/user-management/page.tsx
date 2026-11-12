@@ -19,7 +19,6 @@ export default async function AdminUserManagementPage() {
         blockMessage: true,
         notifyVitals: true,
         notifySnooze: true,
-        sosEnabled: true,
         canManageMeds: true,
         alarmSnoozeText: true,
         alarmSnoozeDuration: true,
@@ -68,7 +67,6 @@ export default async function AdminUserManagementPage() {
         blockMessage: u.blockMessage || "",
         notifyVitals: Boolean(u.notifyVitals),
         notifySnooze: Boolean(u.notifySnooze),
-        sosEnabled: Boolean(u.sosEnabled),
         canManageMeds: Boolean(u.canManageMeds),
         alarmSnoozeText: u.alarmSnoozeText || "Take later",
         alarmSnoozeDuration: u.alarmSnoozeDuration ?? 10,
@@ -95,7 +93,7 @@ export default async function AdminUserManagementPage() {
       <header>
         <h2 className="text-3xl font-black text-slate-900 tracking-tight">User Management</h2>
         <p className="text-slate-500 mt-2">
-          Enable or disable Auto-Snooze, set per-account trigger timers, and configure alarm, SOS, and notification settings. Alarm preferences sync directly to each device&apos;s phone memory.
+          Enable or disable Auto-Snooze, set per-account trigger timers, and configure alarm and notification settings. Alarm preferences sync directly to each device&apos;s phone memory.
         </p>
       </header>
 

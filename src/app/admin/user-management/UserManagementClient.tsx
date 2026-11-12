@@ -54,7 +54,6 @@ export type ManagedUserItem = {
   blockMessage: string
   notifyVitals: boolean
   notifySnooze: boolean
-  sosEnabled: boolean
   canManageMeds: boolean
   alarmSnoozeText: string
   alarmSnoozeDuration: number
@@ -237,7 +236,6 @@ function ManagedUserCard({
           alarmTakeBtnColor: safeTakeColor,
           alarmSnoozeBtnColor: safeSnoozeColor,
           stickyAlarmNotification: draft.stickyAlarmNotification,
-          sosEnabled: draft.sosEnabled,
           canManageMeds: draft.canManageMeds,
           notifyVitals: draft.notifyVitals,
           notifySnooze: draft.notifySnooze,
@@ -333,17 +331,6 @@ function ManagedUserCard({
                 user.alarmSnoozeBtnColor !== DEFAULT_SNOOZE_BTN_COLOR) && (
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
                   🎨 UI: {user.alarmButtonOrder === "SNOOZE_FIRST" ? "Snooze Top" : "Take Top"}
-                </span>
-              )}
-              {isElder && (
-                <span
-                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
-                    user.sosEnabled
-                      ? "bg-rose-50 text-rose-700 border-rose-200"
-                      : "bg-slate-50 text-slate-500 border-slate-200"
-                  }`}
-                >
-                  🚨 SOS: {user.sosEnabled ? "ON" : "OFF"}
                 </span>
               )}
               {user.linkedNames.length > 0 && (
@@ -585,23 +572,13 @@ function ManagedUserCard({
                 </h4>
 
                 {isElder ? (
-                  <>
-                    <ToggleRow
-                      label="Emergency SOS Access"
-                      description="Allow Emergency SOS trigger & escalation workflow for this elder account."
-                      checked={draft.sosEnabled}
-                      onChange={(next) => setDraft({ ...draft, sosEnabled: next })}
-                      accentClass="peer-checked:bg-rose-600"
-                    />
-
-                    <ToggleRow
-                      label="Can Manage Medications"
-                      description="Allow this elder account to add or edit their own medication reminders."
-                      checked={draft.canManageMeds}
-                      onChange={(next) => setDraft({ ...draft, canManageMeds: next })}
-                      accentClass="peer-checked:bg-emerald-600"
-                    />
-                  </>
+                  <ToggleRow
+                    label="Can Manage Medications"
+                    description="Allow this elder account to add or edit their own medication reminders."
+                    checked={draft.canManageMeds}
+                    onChange={(next) => setDraft({ ...draft, canManageMeds: next })}
+                    accentClass="peer-checked:bg-emerald-600"
+                  />
                 ) : (
                   <>
                     <ToggleRow
@@ -906,9 +883,8 @@ export function UserManagementClient({ initialUsers }: { initialUsers: ManagedUs
   const stats = useMemo(() => {
     const elders = users.filter((u) => u.role === "ELDER").length
     const autoOn = users.filter((u) => u.autoSnoozeEnabled).length
-    const sosOn = users.filter((u) => u.sosEnabled).length
     const blocked = users.filter((u) => u.isBlocked).length
-    return { total: users.length, elders, autoOn, sosOn, blocked }
+    return { total: users.length, elders, autoOn, blocked }
   }, [users])
 
   const filteredUsers = useMemo(() => {
@@ -943,8 +919,8 @@ export function UserManagementClient({ initialUsers }: { initialUsers: ManagedUs
           <p className="text-3xl font-black text-violet-700 mt-1">{stats.autoOn}</p>
         </div>
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <p className="text-xs font-bold text-rose-600 uppercase tracking-wider">SOS Enabled</p>
-          <p className="text-3xl font-black text-rose-600 mt-1">{stats.sosOn}</p>
+          <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">Elder Accounts</p>
+          <p className="text-3xl font-black text-blue-700 mt-1">{stats.elders}</p>
         </div>
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
           <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Blocked Accounts</p>
