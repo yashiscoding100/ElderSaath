@@ -8,6 +8,8 @@ import {
   normalizeAlarmHexColor
 } from "@/lib/alarmSync"
 
+export const dynamic = "force-dynamic"
+
 export async function PATCH(req: Request) {
   try {
     const session = await auth()
@@ -90,18 +92,25 @@ export async function GET(req: Request) {
       })
     ])
 
-    return NextResponse.json({ 
-      requiredVitals: profile?.requiredVitals || "BP,SUGAR,SPO2,PULSE,TEMP,WEIGHT",
-      askSymptoms: profile?.askSymptoms ?? true,
-      stickyAlarmNotification: profile?.stickyAlarmNotification ?? true,
-      alarmSnoozeText: user?.alarmSnoozeText || "Take later",
-      alarmSnoozeDuration: user?.alarmSnoozeDuration ?? 10,
-      autoSnoozeEnabled: user?.autoSnoozeEnabled ?? false,
-      autoSnoozeAfterSeconds: user?.autoSnoozeAfterSeconds ?? 60,
-      alarmButtonOrder: normalizeAlarmButtonOrder(user?.alarmButtonOrder),
-      alarmTakeBtnColor: normalizeAlarmHexColor(user?.alarmTakeBtnColor, DEFAULT_ALARM_TAKE_BTN_COLOR),
-      alarmSnoozeBtnColor: normalizeAlarmHexColor(user?.alarmSnoozeBtnColor, DEFAULT_ALARM_SNOOZE_BTN_COLOR)
-    })
+    return NextResponse.json(
+      {
+        requiredVitals: profile?.requiredVitals || "BP,SUGAR,SPO2,PULSE,TEMP,WEIGHT",
+        askSymptoms: profile?.askSymptoms ?? true,
+        stickyAlarmNotification: profile?.stickyAlarmNotification ?? true,
+        alarmSnoozeText: user?.alarmSnoozeText || "Take later",
+        alarmSnoozeDuration: user?.alarmSnoozeDuration ?? 10,
+        autoSnoozeEnabled: user?.autoSnoozeEnabled ?? false,
+        autoSnoozeAfterSeconds: user?.autoSnoozeAfterSeconds ?? 60,
+        alarmButtonOrder: normalizeAlarmButtonOrder(user?.alarmButtonOrder),
+        alarmTakeBtnColor: normalizeAlarmHexColor(user?.alarmTakeBtnColor, DEFAULT_ALARM_TAKE_BTN_COLOR),
+        alarmSnoozeBtnColor: normalizeAlarmHexColor(user?.alarmSnoozeBtnColor, DEFAULT_ALARM_SNOOZE_BTN_COLOR)
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate"
+        }
+      }
+    )
   } catch (error) {
     console.error("Error fetching preferences:", error)
     return NextResponse.json({ message: "Internal server error" }, { status: 500 })

@@ -35,10 +35,13 @@ import android.widget.Toast;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.Set;
@@ -54,6 +57,19 @@ public class AlarmActivity extends Activity {
     private Handler autoSnoozeHandler;
     private Runnable autoSnoozeRunnable;
     private volatile boolean alarmHandled = false;
+
+    private long currentTriggerNonce = 0L;
+    private long intentGeneration = 0L;
+    private long ringStartElapsed = 0L;
+    private volatile boolean currentAutoSnoozeEnabled = false;
+    private volatile int currentAutoSnoozeAfterSeconds = 60;
+    private volatile int currentSnoozeDuration = 10;
+    private volatile String currentSnoozeText = "Take later";
+    private String currentElderId = "";
+    private boolean currentIsEmergencySos = false;
+    private Button currentSnoozeBtn = null;
+    private TextView currentAutoSnoozeStatusView = null;
+    private Runnable currentPerformSnoozeAction = null;
 
     private void cancelAutoSnoozeTimer() {
         try {
@@ -109,7 +125,6 @@ public class AlarmActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         currentInstance = this;
-        alarmHandled = false;
 
         // 1. Force Screen ON and Show Over Lockscreen
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -124,83 +139,63 @@ public class AlarmActivity extends Activity {
             WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON
         );
 
+        handleAlarmIntent(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent newIntent) {
+        super.onNewIntent(newIntent);
+        currentInstance = this;
+        if (newIntent == null) return;
+
+        long newNonce = newIntent.getLongExtra("triggerNonce", 0L);
+        if (!alarmHandled && newNonce != 0L && newNonce == currentTriggerNonce) {
+            Log.d(TAG, "Ignoring duplicate re-delivery for same alarm triggerNonce=" + newNonce);
+            return;
+        }
+
+        Log.i(TAG, "onNewIntent received for AlarmActivity (newNonce=" + newNonce + ", prevNonce=" + currentTriggerNonce + ") - resetting alarm state");
+        cancelAutoSnoozeTimer();
+        stopAlarmAndSound();
+        stopSpecialNoticeAudio();
+        setIntent(newIntent);
+        handleAlarmIntent(newIntent);
+    }
+
+    private void handleAlarmIntent(Intent intent) {
+        if (intent == null) {
+            finish();
+            return;
+        }
+
+        intentGeneration++;
+        final long myGeneration = intentGeneration;
+        alarmHandled = false;
+        currentTriggerNonce = intent.getLongExtra("triggerNonce", 0L);
+        ringStartElapsed = SystemClock.elapsedRealtime();
+
         // 2. Extract Alarm Details & Stored On-Device Settings
-        String elderId = getIntent().getStringExtra("elderId");
+        final boolean isSnooze = intent.getBooleanExtra("isSnooze", false);
+        final boolean isLocalAlarm = intent.getBooleanExtra("isLocalAlarm", false);
+
+        String elderId = intent.getStringExtra("elderId");
         if (elderId == null || elderId.isEmpty()) {
             SharedPreferences prefs = getSharedPreferences("ElderSaathAlarms", Context.MODE_PRIVATE);
             elderId = prefs.getString("elder_id", "");
         }
+        currentElderId = elderId != null ? elderId : "";
 
-        String actionText = getIntent().getStringExtra("actionText");
+        String actionText = intent.getStringExtra("actionText");
         if (actionText == null || actionText.isEmpty()) actionText = "TAKE MEDICINE / STOP ALARM";
 
-        String label = getIntent().getStringExtra("label");
+        String label = intent.getStringExtra("label");
         if (label == null) label = "EMERGENCY ALARM!";
-        
-        String body = getIntent().getStringExtra("body");
+
+        String body = intent.getStringExtra("body");
         if (body == null) body = "Please take your medications on time.";
 
-        String alarmType = getIntent().getStringExtra("type");
-
-        String snoozeText = getIntent().getStringExtra("snoozeText");
-        if (snoozeText == null || snoozeText.isEmpty()) {
-            snoozeText = AlarmScheduler.getChildSnoozeText(this, elderId, alarmType);
-        }
-        
-        int parsedSnooze = AlarmScheduler.getChildSnoozeDuration(this, elderId);
-        try {
-            if (getIntent().hasExtra("snoozeDuration")) {
-                Object obj = getIntent().getExtras().get("snoozeDuration");
-                if (obj instanceof Integer) {
-                    parsedSnooze = (Integer) obj;
-                } else if (obj instanceof String) {
-                    parsedSnooze = Integer.parseInt((String) obj);
-                }
-            }
-        } catch (Exception ignored) {}
-        final int snoozeDuration = Math.max(1, parsedSnooze);
-
-        final boolean autoSnoozeEnabled = getIntent().hasExtra("autoSnoozeEnabled")
-            ? getIntent().getBooleanExtra("autoSnoozeEnabled", false)
-            : AlarmScheduler.isAutoSnoozeEnabled(this, elderId);
-        final int autoSnoozeAfterSeconds = Math.max(5, getIntent().hasExtra("autoSnoozeAfterSeconds")
-            ? getIntent().getIntExtra("autoSnoozeAfterSeconds", 60)
-            : AlarmScheduler.getAutoSnoozeAfterSeconds(this, elderId));
-
-        final String alarmButtonOrder = AlarmScheduler.sanitizeButtonOrder(
-            getIntent().hasExtra("alarmButtonOrder")
-                ? getIntent().getStringExtra("alarmButtonOrder")
-                : AlarmScheduler.getAlarmButtonOrder(this, elderId)
-        );
-        final String alarmTakeBtnColor = AlarmScheduler.sanitizeHexColor(
-            getIntent().hasExtra("alarmTakeBtnColor")
-                ? getIntent().getStringExtra("alarmTakeBtnColor")
-                : AlarmScheduler.getAlarmTakeBtnColor(this, elderId),
-            AlarmScheduler.DEFAULT_TAKE_BTN_COLOR
-        );
-        final String alarmSnoozeBtnColor = AlarmScheduler.sanitizeHexColor(
-            getIntent().hasExtra("alarmSnoozeBtnColor")
-                ? getIntent().getStringExtra("alarmSnoozeBtnColor")
-                : AlarmScheduler.getAlarmSnoozeBtnColor(this, elderId),
-            AlarmScheduler.DEFAULT_SNOOZE_BTN_COLOR
-        );
-
-        // 3. CPU WakeLock for duration of alarm + auto-snooze countdown
-        try {
-            PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
-            if (powerManager != null) {
-                wakeLock = powerManager.newWakeLock(
-                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE,
-                    "ElderSaath::AlarmActivityWakeLock"
-                );
-                long wakeMs = autoSnoozeEnabled
-                    ? Math.min(30 * 60 * 1000L, Math.max(3 * 60 * 1000L, (autoSnoozeAfterSeconds + 30L) * 1000L))
-                    : 3 * 60 * 1000L;
-                wakeLock.acquire(wakeMs);
-            }
-        } catch (Exception ignored) {}
-
-        String medicationId = getIntent().getStringExtra("medicationId");
+        String alarmType = intent.getStringExtra("type");
+        String medicationId = intent.getStringExtra("medicationId");
         JSONObject cachedMed = AlarmScheduler.getMedicationFromCache(this, medicationId, label);
         if ((medicationId == null || medicationId.isEmpty()) && cachedMed != null) {
             medicationId = cachedMed.optString("id", "");
@@ -213,6 +208,59 @@ public class AlarmActivity extends Activity {
         final String finalMedicationId = medicationId;
         final String finalElderId = elderId;
         final String finalAlarmType = alarmType != null ? alarmType : "MEDICATION";
+
+        // For snoozed or locally scheduled alarms, ALWAYS read live preferences from SharedPreferences
+        // so updates made after an alarm was scheduled or snoozed take effect immediately.
+        boolean useLivePrefs = isSnooze || isLocalAlarm;
+
+        String snoozeText = useLivePrefs ? null : intent.getStringExtra("snoozeText");
+        if (snoozeText == null || snoozeText.isEmpty()) {
+            snoozeText = AlarmScheduler.getChildSnoozeText(this, elderId, finalAlarmType);
+        }
+
+        int parsedSnooze = AlarmScheduler.getChildSnoozeDuration(this, elderId);
+        if (!useLivePrefs) {
+            try {
+                if (intent.hasExtra("snoozeDuration") && intent.getExtras() != null) {
+                    Object obj = intent.getExtras().get("snoozeDuration");
+                    if (obj instanceof Integer) {
+                        parsedSnooze = (Integer) obj;
+                    } else if (obj instanceof String) {
+                        parsedSnooze = Integer.parseInt((String) obj);
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        currentSnoozeDuration = Math.max(1, parsedSnooze);
+        currentSnoozeText = snoozeText;
+
+        currentAutoSnoozeEnabled = (!useLivePrefs && intent.hasExtra("autoSnoozeEnabled"))
+            ? intent.getBooleanExtra("autoSnoozeEnabled", false)
+            : AlarmScheduler.isAutoSnoozeEnabled(this, elderId);
+        currentAutoSnoozeAfterSeconds = Math.max(5, (!useLivePrefs && intent.hasExtra("autoSnoozeAfterSeconds"))
+            ? intent.getIntExtra("autoSnoozeAfterSeconds", 60)
+            : AlarmScheduler.getAutoSnoozeAfterSeconds(this, elderId));
+
+        final String alarmButtonOrder = AlarmScheduler.sanitizeButtonOrder(
+            (!useLivePrefs && intent.hasExtra("alarmButtonOrder"))
+                ? intent.getStringExtra("alarmButtonOrder")
+                : AlarmScheduler.getAlarmButtonOrder(this, elderId)
+        );
+        final String alarmTakeBtnColor = AlarmScheduler.sanitizeHexColor(
+            (!useLivePrefs && intent.hasExtra("alarmTakeBtnColor"))
+                ? intent.getStringExtra("alarmTakeBtnColor")
+                : AlarmScheduler.getAlarmTakeBtnColor(this, elderId),
+            AlarmScheduler.DEFAULT_TAKE_BTN_COLOR
+        );
+        final String alarmSnoozeBtnColor = AlarmScheduler.sanitizeHexColor(
+            (!useLivePrefs && intent.hasExtra("alarmSnoozeBtnColor"))
+                ? intent.getStringExtra("alarmSnoozeBtnColor")
+                : AlarmScheduler.getAlarmSnoozeBtnColor(this, elderId),
+            AlarmScheduler.DEFAULT_SNOOZE_BTN_COLOR
+        );
+
+        // 3. CPU WakeLock for duration of alarm + auto-snooze countdown
+        refreshWakeLockForAutoSnooze();
 
         // 4. Set Clean, Responsive XML Layout
         setContentView(R.layout.activity_alarm);
@@ -237,6 +285,10 @@ public class AlarmActivity extends Activity {
         LinearLayout layoutAlarmButtonsInner = findViewById(R.id.layoutAlarmButtonsInner);
         final TextView autoSnoozeStatusView = findViewById(R.id.tvAutoSnoozeStatus);
 
+        currentSnoozeBtn = snoozeBtn;
+        currentAutoSnoozeStatusView = autoSnoozeStatusView;
+        currentIsEmergencySos = label.contains("EMERGENCY SOS") || "EMERGENCY_SOS".equalsIgnoreCase(finalAlarmType);
+
         if (label.contains("SOS") || label.contains("EMERGENCY")) {
             iconView.setText("🚨");
             alertBadge.setText("🚨 EMERGENCY SOS ACTIVE!");
@@ -252,9 +304,9 @@ public class AlarmActivity extends Activity {
         bodyView.setText(body);
         stopBtn.setText(actionText.toUpperCase());
 
-        String displaySnooze = snoozeText;
+        String displaySnooze = currentSnoozeText;
         if (!displaySnooze.toLowerCase().contains("min") && !displaySnooze.toLowerCase().contains("m)")) {
-            displaySnooze = displaySnooze + " (" + snoozeDuration + " mins)";
+            displaySnooze = displaySnooze + " (" + currentSnoozeDuration + " mins)";
         }
         snoozeBtn.setText(displaySnooze);
 
@@ -273,7 +325,6 @@ public class AlarmActivity extends Activity {
         final String finalActionText = actionText;
         final String finalLabel = label;
         final String finalBody = body;
-        final String finalSnoozeText = snoozeText;
 
         final Runnable performSnoozeAction = new Runnable() {
             @Override
@@ -284,41 +335,36 @@ public class AlarmActivity extends Activity {
                 stopAlarmAndSound();
 
                 boolean triggeredAutomatically = "AUTO".equals(autoSnoozeStatusView.getTag());
+                int activeSnoozeMinutes = Math.max(1, currentSnoozeDuration);
 
                 // Notify caregiver server in background that snooze was triggered
                 notifySnoozeToServer(AlarmActivity.this, finalElderId, triggeredAutomatically);
-                
+
                 // Route snooze alarm through LocalAlarmReceiver using setAlarmClock
-                // This pierces MIUI / HyperOS battery optimizations and bypasses Android 10+ background activity launch restrictions
+                // Never freeze mutable preferences (autoSnooze, button colors/order, snoozeDuration) into PendingIntent extras
+                // so changes made while snoozed apply immediately when the snoozed alarm wakes up.
                 Intent snoozeIntent = new Intent(AlarmActivity.this, LocalAlarmReceiver.class);
                 snoozeIntent.setAction(LocalAlarmReceiver.ACTION_SNOOZE_ALARM);
                 snoozeIntent.putExtra("isSnooze", true);
                 snoozeIntent.putExtra("actionText", finalActionText);
                 snoozeIntent.putExtra("label", finalLabel);
                 snoozeIntent.putExtra("body", finalBody);
-                snoozeIntent.putExtra("snoozeText", finalSnoozeText);
-                snoozeIntent.putExtra("snoozeDuration", snoozeDuration);
-                snoozeIntent.putExtra("autoSnoozeEnabled", autoSnoozeEnabled);
-                snoozeIntent.putExtra("autoSnoozeAfterSeconds", autoSnoozeAfterSeconds);
-                snoozeIntent.putExtra("alarmButtonOrder", alarmButtonOrder);
-                snoozeIntent.putExtra("alarmTakeBtnColor", alarmTakeBtnColor);
-                snoozeIntent.putExtra("alarmSnoozeBtnColor", alarmSnoozeBtnColor);
                 snoozeIntent.putExtra("medicationId", finalMedicationId);
                 snoozeIntent.putExtra("name", finalLabel);
                 snoozeIntent.putExtra("type", finalAlarmType);
                 if (finalElderId != null) snoozeIntent.putExtra("elderId", finalElderId);
-                
+
                 int flags = PendingIntent.FLAG_UPDATE_CURRENT;
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) flags |= PendingIntent.FLAG_IMMUTABLE;
 
-                int reqCode = (int) (System.currentTimeMillis() % 100000);
+                int reqCode = 200000 + (int) (System.currentTimeMillis() % 100000);
                 PendingIntent pi = PendingIntent.getBroadcast(AlarmActivity.this, reqCode, snoozeIntent, flags);
 
                 Intent showIntent = new Intent(AlarmActivity.this, MainActivity.class);
                 PendingIntent showPi = PendingIntent.getActivity(AlarmActivity.this, reqCode, showIntent, flags);
 
                 AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
-                long triggerAt = System.currentTimeMillis() + (snoozeDuration * 60 * 1000L);
+                long triggerAt = System.currentTimeMillis() + (activeSnoozeMinutes * 60 * 1000L);
 
                 if (am != null) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
@@ -332,12 +378,13 @@ public class AlarmActivity extends Activity {
                 }
 
                 String toastMsg = triggeredAutomatically
-                    ? "No response — Alarm auto-snoozed for " + snoozeDuration + " minutes"
-                    : "Alarm snoozed for " + snoozeDuration + " minutes";
+                    ? "No response — Alarm auto-snoozed for " + activeSnoozeMinutes + " minutes"
+                    : "Alarm snoozed for " + activeSnoozeMinutes + " minutes";
                 Toast.makeText(AlarmActivity.this, toastMsg, Toast.LENGTH_LONG).show();
                 finish();
             }
         };
+        currentPerformSnoozeAction = performSnoozeAction;
 
         // Immediate responsive click handling for lockscreen wakeup
         View.OnClickListener stopClickListener = new View.OnClickListener() {
@@ -460,32 +507,176 @@ public class AlarmActivity extends Activity {
         snoozeBtn.setOnClickListener(snoozeClickListener);
 
         // 5. Start Auto-Snooze Countdown (ONLY if enabled by Admin for this account)
-        boolean isEmergencySos = finalLabel.contains("EMERGENCY SOS") || "EMERGENCY_SOS".equalsIgnoreCase(finalAlarmType);
-        if (autoSnoozeEnabled && autoSnoozeAfterSeconds > 0 && !isEmergencySos) {
-            final long deadlineElapsed = SystemClock.elapsedRealtime() + (autoSnoozeAfterSeconds * 1000L);
-            autoSnoozeStatusView.setVisibility(View.VISIBLE);
-            autoSnoozeHandler = new Handler(Looper.getMainLooper());
-            autoSnoozeRunnable = new Runnable() {
-                @Override
-                public void run() {
-                    if (alarmHandled || isFinishing() || isDestroyed()) return;
-                    long remainingMs = deadlineElapsed - SystemClock.elapsedRealtime();
-                    if (remainingMs <= 0) {
-                        Log.i(TAG, "Auto-snooze countdown reached 0 for account " + finalElderId + " - auto-snoozing for " + snoozeDuration + " mins.");
-                        autoSnoozeStatusView.setTag("AUTO");
-                        performSnoozeAction.run();
-                        return;
-                    }
-                    long remainingSec = (long) Math.ceil(remainingMs / 1000.0);
-                    autoSnoozeStatusView.setText("⏱️ Auto-snoozing in " + remainingSec + "s if no response...");
-                    autoSnoozeHandler.postDelayed(this, 1000L);
-                }
-            };
-            autoSnoozeHandler.post(autoSnoozeRunnable);
+        applyAutoSnoozeSchedule();
+
+        // 6. Start Single Continuous Sound and Aggressive Vibration immediately (100% offline-first)
+        startAlarmSoundAndVibration();
+
+        // 7. Non-blocking background check against server in case Doze/battery-saver delayed silent FCM settings push
+        boolean shouldUpdateSnoozeLabel = useLivePrefs || (finalMedicationId != null && !finalMedicationId.trim().isEmpty());
+        syncLivePreferencesFromServer(finalElderId, finalAlarmType, myGeneration, currentIsEmergencySos, shouldUpdateSnoozeLabel);
+    }
+
+    private void refreshWakeLockForAutoSnooze() {
+        try {
+            if (wakeLock != null && wakeLock.isHeld()) {
+                wakeLock.release();
+                wakeLock = null;
+            }
+            PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (powerManager != null) {
+                wakeLock = powerManager.newWakeLock(
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE,
+                    "ElderSaath::AlarmActivityWakeLock"
+                );
+                long wakeMs = currentAutoSnoozeEnabled
+                    ? Math.min(30 * 60 * 1000L, Math.max(3 * 60 * 1000L, (currentAutoSnoozeAfterSeconds + 30L) * 1000L))
+                    : 3 * 60 * 1000L;
+                wakeLock.acquire(wakeMs);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void applyAutoSnoozeSchedule() {
+        cancelAutoSnoozeTimer();
+        if (alarmHandled || isFinishing() || isDestroyed() || currentAutoSnoozeStatusView == null) return;
+
+        if (!currentAutoSnoozeEnabled || currentAutoSnoozeAfterSeconds <= 0 || currentIsEmergencySos) {
+            currentAutoSnoozeStatusView.setVisibility(View.GONE);
+            return;
         }
 
-        // 6. Start Single Continuous Sound and Aggressive Vibration
-        startAlarmSoundAndVibration();
+        final long deadlineElapsed = ringStartElapsed + (currentAutoSnoozeAfterSeconds * 1000L);
+        currentAutoSnoozeStatusView.setVisibility(View.VISIBLE);
+        if (autoSnoozeHandler == null) {
+            autoSnoozeHandler = new Handler(Looper.getMainLooper());
+        }
+        autoSnoozeRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (alarmHandled || isFinishing() || isDestroyed()) return;
+                long remainingMs = deadlineElapsed - SystemClock.elapsedRealtime();
+                if (remainingMs <= 0) {
+                    Log.i(TAG, "Auto-snooze countdown reached 0 for account " + currentElderId + " - auto-snoozing for " + currentSnoozeDuration + " mins.");
+                    currentAutoSnoozeStatusView.setTag("AUTO");
+                    if (currentPerformSnoozeAction != null) {
+                        currentPerformSnoozeAction.run();
+                    }
+                    return;
+                }
+                long remainingSec = (long) Math.ceil(remainingMs / 1000.0);
+                currentAutoSnoozeStatusView.setText("⏱️ Auto-snoozing in " + remainingSec + "s if no response...");
+                autoSnoozeHandler.postDelayed(this, 1000L);
+            }
+        };
+        autoSnoozeHandler.post(autoSnoozeRunnable);
+    }
+
+    private void syncLivePreferencesFromServer(
+        final String elderId,
+        final String alarmType,
+        final long generation,
+        final boolean isEmergencySos,
+        final boolean shouldUpdateSnoozeLabel
+    ) {
+        if (elderId == null || elderId.trim().isEmpty() || isEmergencySos) return;
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                HttpURLConnection conn = null;
+                try {
+                    String encodedElderId = URLEncoder.encode(elderId.trim(), "UTF-8");
+                    URL url = new URL("https://eldersaath.vercel.app/api/elder/preferences?elderId=" + encodedElderId + "&_t=" + System.currentTimeMillis());
+                    conn = (HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("GET");
+                    conn.setUseCaches(false);
+                    conn.setRequestProperty("Cache-Control", "no-cache");
+                    conn.setRequestProperty("x-app-alarm-secret", "ElderSaath-Hardware-Alarm-v1");
+
+                    try {
+                        String cookie = CookieManager.getInstance().getCookie("https://eldersaath.vercel.app");
+                        if (cookie != null && !cookie.isEmpty()) {
+                            conn.setRequestProperty("Cookie", cookie);
+                        }
+                    } catch (Exception ignored) {}
+
+                    conn.setConnectTimeout(4000);
+                    conn.setReadTimeout(4000);
+
+                    int code = conn.getResponseCode();
+                    if (code < 200 || code >= 300) return;
+
+                    StringBuilder sb = new StringBuilder();
+                    try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                        String line;
+                        while ((line = br.readLine()) != null) {
+                            sb.append(line);
+                        }
+                    }
+
+                    JSONObject json = new JSONObject(sb.toString());
+                    final boolean srvAutoEnabled = json.optBoolean("autoSnoozeEnabled", false);
+                    final int srvAutoSeconds = Math.max(5, json.optInt("autoSnoozeAfterSeconds", 60));
+                    final int srvSnoozeDuration = Math.max(1, json.optInt("alarmSnoozeDuration", 10));
+                    final String srvSnoozeText = json.optString("alarmSnoozeText", "Take later");
+                    final boolean srvSticky = json.optBoolean("stickyAlarmNotification", true);
+                    final String srvButtonOrder = json.optString("alarmButtonOrder", AlarmScheduler.DEFAULT_BUTTON_ORDER);
+                    final String srvTakeColor = json.optString("alarmTakeBtnColor", AlarmScheduler.DEFAULT_TAKE_BTN_COLOR);
+                    final String srvSnoozeColor = json.optString("alarmSnoozeBtnColor", AlarmScheduler.DEFAULT_SNOOZE_BTN_COLOR);
+
+                    AlarmScheduler.saveAlarmSettings(
+                        getApplicationContext(),
+                        elderId,
+                        srvSnoozeText,
+                        srvSnoozeDuration,
+                        srvAutoEnabled,
+                        srvAutoSeconds,
+                        srvSticky,
+                        srvButtonOrder,
+                        srvTakeColor,
+                        srvSnoozeColor
+                    );
+
+                    final String resolvedSnoozeText = AlarmScheduler.getChildSnoozeText(getApplicationContext(), elderId, alarmType);
+
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (generation != intentGeneration || alarmHandled || isFinishing() || isDestroyed()) {
+                                return;
+                            }
+
+                            if (shouldUpdateSnoozeLabel) {
+                                currentSnoozeDuration = srvSnoozeDuration;
+                                if (resolvedSnoozeText != null && !resolvedSnoozeText.trim().isEmpty()) {
+                                    currentSnoozeText = resolvedSnoozeText;
+                                }
+                                if (currentSnoozeBtn != null) {
+                                    String displaySnooze = currentSnoozeText;
+                                    if (!displaySnooze.toLowerCase().contains("min") && !displaySnooze.toLowerCase().contains("m)")) {
+                                        displaySnooze = displaySnooze + " (" + currentSnoozeDuration + " mins)";
+                                    }
+                                    currentSnoozeBtn.setText(displaySnooze);
+                                }
+                            }
+
+                            if (srvAutoEnabled != currentAutoSnoozeEnabled || srvAutoSeconds != currentAutoSnoozeAfterSeconds) {
+                                Log.i(TAG, "Hot-updating live auto-snooze from server: enabled=" + srvAutoEnabled + ", seconds=" + srvAutoSeconds);
+                                currentAutoSnoozeEnabled = srvAutoEnabled;
+                                currentAutoSnoozeAfterSeconds = srvAutoSeconds;
+                                refreshWakeLockForAutoSnooze();
+                                applyAutoSnoozeSchedule();
+                            }
+                        }
+                    });
+                } catch (Exception e) {
+                    Log.d(TAG, "Non-blocking live preference check skipped/offline: " + e.getMessage());
+                } finally {
+                    if (conn != null) conn.disconnect();
+                }
+            }
+        }).start();
     }
 
     private void applyCustomAlarmButtonUi(

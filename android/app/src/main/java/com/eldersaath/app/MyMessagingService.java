@@ -31,17 +31,22 @@ public class MyMessagingService extends MessagingService {
             String medsJson = remoteMessage.getData().get("medications");
             if (medsJson != null && !medsJson.trim().isEmpty()) {
                 AlarmScheduler.saveAndSchedule(this, medsJson);
-            } else {
-                AlarmScheduler.rescheduleAll(this);
             }
 
             // Persist child snooze, admin auto-snooze & button layout settings into phone memory
             if (remoteMessage.getData().containsKey("autoSnoozeEnabled") ||
+                remoteMessage.getData().containsKey("autoSnoozeAfterSeconds") ||
                 remoteMessage.getData().containsKey("alarmSnoozeDuration") ||
+                remoteMessage.getData().containsKey("alarmSnoozeText") ||
+                remoteMessage.getData().containsKey("stickyAlarmNotification") ||
                 remoteMessage.getData().containsKey("alarmButtonOrder") ||
                 remoteMessage.getData().containsKey("alarmTakeBtnColor") ||
                 remoteMessage.getData().containsKey("alarmSnoozeBtnColor")) {
+                SharedPreferences syncPrefs = getSharedPreferences("ElderSaathAlarms", Context.MODE_PRIVATE);
                 String syncElderId = remoteMessage.getData().get("elderId");
+                if (syncElderId == null || syncElderId.trim().isEmpty()) {
+                    syncElderId = syncPrefs.getString("elder_id", "");
+                }
                 String syncSnoozeText = remoteMessage.getData().containsKey("alarmSnoozeText")
                     ? remoteMessage.getData().get("alarmSnoozeText")
                     : AlarmScheduler.getChildSnoozeText(this, syncElderId, "MEDICATION");
@@ -58,7 +63,9 @@ public class MyMessagingService extends MessagingService {
                     String sAutoSec = remoteMessage.getData().get("autoSnoozeAfterSeconds");
                     if (sAutoSec != null) syncAutoSec = Integer.parseInt(sAutoSec);
                 } catch (Exception ignored) {}
-                boolean syncSticky = !"false".equalsIgnoreCase(remoteMessage.getData().get("stickyAlarmNotification"));
+                boolean syncSticky = remoteMessage.getData().containsKey("stickyAlarmNotification")
+                    ? !"false".equalsIgnoreCase(remoteMessage.getData().get("stickyAlarmNotification"))
+                    : syncPrefs.getBoolean("sticky_alarm_notification", true);
                 String syncButtonOrder = remoteMessage.getData().containsKey("alarmButtonOrder")
                     ? remoteMessage.getData().get("alarmButtonOrder")
                     : AlarmScheduler.getAlarmButtonOrder(this, syncElderId);
@@ -181,7 +188,10 @@ public class MyMessagingService extends MessagingService {
                 try { snoozeDuration = Integer.parseInt(snoozeDurationStr); } catch (Exception ignored) {}
             }
             String elderId = remoteMessage.getData().get("elderId");
-            if (snoozeText == null) snoozeText = "I'll take the medicines later";
+            if (elderId == null || elderId.trim().isEmpty()) {
+                elderId = prefs.getString("elder_id", "");
+            }
+            if (snoozeText == null) snoozeText = AlarmScheduler.getChildSnoozeText(this, elderId, "MEDICATION");
             if (actionText == null) actionText = "TAKE MEDICINE / STOP ALARM";
 
             boolean autoSnoozeEnabled = AlarmScheduler.isAutoSnoozeEnabled(this, elderId);
@@ -262,6 +272,22 @@ public class MyMessagingService extends MessagingService {
                 fullScreenIntent.putExtra("alarmButtonOrder", alarmButtonOrder);
                 fullScreenIntent.putExtra("alarmTakeBtnColor", alarmTakeBtnColor);
                 fullScreenIntent.putExtra("alarmSnoozeBtnColor", alarmSnoozeBtnColor);
+                fullScreenIntent.putExtra("triggerNonce", System.currentTimeMillis());
+                fullScreenIntent.putExtra("isLocalAlarm", false);
+                if (elderId != null && !elderId.trim().isEmpty() && remoteMessage.getData().containsKey("autoSnoozeEnabled")) {
+                    AlarmScheduler.saveAlarmSettings(
+                        this,
+                        elderId,
+                        AlarmScheduler.getChildSnoozeText(this, elderId, "MEDICATION"),
+                        AlarmScheduler.getChildSnoozeDuration(this, elderId),
+                        autoSnoozeEnabled,
+                        autoSnoozeAfterSeconds,
+                        !"false".equals(remoteMessage.getData().get("stickyNotification")),
+                        alarmButtonOrder,
+                        alarmTakeBtnColor,
+                        alarmSnoozeBtnColor
+                    );
+                }
                 boolean showSticky = true;
                 if (remoteMessage.getData().containsKey("stickyNotification")) {
                     if ("false".equals(remoteMessage.getData().get("stickyNotification"))) showSticky = false;

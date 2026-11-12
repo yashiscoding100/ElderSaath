@@ -50,38 +50,21 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
         String label = intent.getStringExtra("label");
         String body = intent.getStringExtra("body");
         String actionText = intent.getStringExtra("actionText");
-        String snoozeText = intent.getStringExtra("snoozeText");
         SharedPreferences prefs = context.getSharedPreferences("ElderSaathAlarms", Context.MODE_PRIVATE);
         if (elderId == null || elderId.isEmpty()) {
             elderId = prefs.getString("elder_id", "");
         }
+        if (type == null || type.isEmpty()) type = "MEDICATION";
 
-        int snoozeDuration = intent.hasExtra("snoozeDuration")
-            ? intent.getIntExtra("snoozeDuration", 10)
-            : AlarmScheduler.getChildSnoozeDuration(context, elderId);
-        boolean autoSnoozeEnabled = intent.hasExtra("autoSnoozeEnabled")
-            ? intent.getBooleanExtra("autoSnoozeEnabled", false)
-            : AlarmScheduler.isAutoSnoozeEnabled(context, elderId);
-        int autoSnoozeAfterSeconds = intent.hasExtra("autoSnoozeAfterSeconds")
-            ? intent.getIntExtra("autoSnoozeAfterSeconds", 60)
-            : AlarmScheduler.getAutoSnoozeAfterSeconds(context, elderId);
-        String alarmButtonOrder = AlarmScheduler.sanitizeButtonOrder(
-            intent.hasExtra("alarmButtonOrder")
-                ? intent.getStringExtra("alarmButtonOrder")
-                : AlarmScheduler.getAlarmButtonOrder(context, elderId)
-        );
-        String alarmTakeBtnColor = AlarmScheduler.sanitizeHexColor(
-            intent.hasExtra("alarmTakeBtnColor")
-                ? intent.getStringExtra("alarmTakeBtnColor")
-                : AlarmScheduler.getAlarmTakeBtnColor(context, elderId),
-            AlarmScheduler.DEFAULT_TAKE_BTN_COLOR
-        );
-        String alarmSnoozeBtnColor = AlarmScheduler.sanitizeHexColor(
-            intent.hasExtra("alarmSnoozeBtnColor")
-                ? intent.getStringExtra("alarmSnoozeBtnColor")
-                : AlarmScheduler.getAlarmSnoozeBtnColor(context, elderId),
-            AlarmScheduler.DEFAULT_SNOOZE_BTN_COLOR
-        );
+        // Always read live alarm, snooze, auto-snooze & button UI settings from phone memory
+        // so updates made after an alarm was scheduled or snoozed apply immediately on ring.
+        int snoozeDuration = AlarmScheduler.getChildSnoozeDuration(context, elderId);
+        String snoozeText = AlarmScheduler.getChildSnoozeText(context, elderId, type);
+        boolean autoSnoozeEnabled = AlarmScheduler.isAutoSnoozeEnabled(context, elderId);
+        int autoSnoozeAfterSeconds = AlarmScheduler.getAutoSnoozeAfterSeconds(context, elderId);
+        String alarmButtonOrder = AlarmScheduler.getAlarmButtonOrder(context, elderId);
+        String alarmTakeBtnColor = AlarmScheduler.getAlarmTakeBtnColor(context, elderId);
+        String alarmSnoozeBtnColor = AlarmScheduler.getAlarmSnoozeBtnColor(context, elderId);
 
         // 2. Prevent duplicate alarm storm with FCM cloud push (only for initial alarms, not user snoozes)
         long lastFired = prefs.getLong("last_alarm_fired_timestamp", 0);
@@ -116,10 +99,6 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
 
         if (actionText == null || actionText.isEmpty()) {
             actionText = "TASK".equalsIgnoreCase(type) ? "COMPLETE TASK / STOP ALARM" : "TAKE MEDICINE / STOP ALARM";
-        }
-
-        if (snoozeText == null || snoozeText.isEmpty()) {
-            snoozeText = AlarmScheduler.getChildSnoozeText(context, elderId, type);
         }
 
         // 3. Force CPU and Screen awake immediately
@@ -169,6 +148,8 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
         alarmIntent.putExtra("medicationId", medicationId);
         alarmIntent.putExtra("type", type);
         alarmIntent.putExtra("isSnooze", isSnooze);
+        alarmIntent.putExtra("isLocalAlarm", true);
+        alarmIntent.putExtra("triggerNonce", System.currentTimeMillis());
         alarmIntent.putExtra("stickyNotification", true);
 
         // 6. Notification Channel: SILENT sound on channel so AlarmActivity MediaPlayer is the SINGLE voice!

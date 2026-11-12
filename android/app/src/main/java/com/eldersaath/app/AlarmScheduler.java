@@ -580,9 +580,12 @@ public class AlarmScheduler {
         editor.putString("alarm_snooze_btn_color", resolvedSnoozeColor);
 
         // Per-account keys
-        if (elderId != null && !elderId.trim().isEmpty()) {
-            String keySuffix = "_" + elderId.trim();
-            editor.putString("elder_id", elderId.trim());
+        String effectiveElderId = (elderId != null && !elderId.trim().isEmpty())
+            ? elderId.trim()
+            : prefs.getString("elder_id", "").trim();
+        if (!effectiveElderId.isEmpty()) {
+            String keySuffix = "_" + effectiveElderId;
+            editor.putString("elder_id", effectiveElderId);
             editor.putString("alarm_snooze_text" + keySuffix, safeSnoozeText);
             editor.putInt("alarm_snooze_duration" + keySuffix, safeSnoozeDuration);
             editor.putBoolean("auto_snooze_enabled" + keySuffix, autoSnoozeEnabled);
@@ -594,7 +597,7 @@ public class AlarmScheduler {
         }
 
         editor.apply();
-        Log.i(TAG, "Saved alarm, auto-snooze & button UI config in phone memory [elderId=" + elderId +
+        Log.i(TAG, "Saved alarm, auto-snooze & button UI config in phone memory [elderId=" + effectiveElderId +
               ", autoSnoozeEnabled=" + autoSnoozeEnabled +
               ", autoSnoozeAfterSec=" + safeAutoSec +
               ", childSnoozeDurationMin=" + safeSnoozeDuration +

@@ -187,30 +187,30 @@ export async function getElderAlarmSettings(elderId: string) {
   }
 }
 
-export async function sendSilentAlarmSchedulePush(elderId: string) {
+function getFcmDataByteLength(data: Record<string, string>): number {
+  let total = 0
+  for (const [key, val] of Object.entries(data)) {
+    total += Buffer.byteLength(key, "utf8") + Buffer.byteLength(val, "utf8")
+  }
+  return total
+}
+
+export async function sendSilentAlarmSchedulePush(
+  elderId: string,
+  options?: { settingsOnly?: boolean }
+) {
   if (!elderId) return
 
   try {
+    const settingsOnly = options?.settingsOnly === true
     const [items, settings] = await Promise.all([
-      getUnifiedElderAlarms(elderId),
+      settingsOnly ? Promise.resolve([] as UnifiedAlarmItem[]) : getUnifiedElderAlarms(elderId),
       getElderAlarmSettings(elderId)
     ])
 
-    let medicationsJson = JSON.stringify(items)
-    // Respect FCM 4096-byte UTF-8 data payload limit if many medications have very long notice texts
-    if (Buffer.byteLength(medicationsJson, "utf8") > 3200) {
-      const compactItems = items.map(it =>
-        it.specialNoticeText && it.specialNoticeText.length > 80
-          ? { ...it, specialNoticeText: it.specialNoticeText.slice(0, 80) + "..." }
-          : it
-      )
-      medicationsJson = JSON.stringify(compactItems)
-    }
-
-    await sendPushNotification(elderId, {
+    const payload: Record<string, string> = {
       type: "SYNC_MEDICATIONS",
       elderId,
-      medications: medicationsJson,
       alarmSnoozeText: String(settings.alarmSnoozeText),
       alarmSnoozeDuration: String(settings.alarmSnoozeDuration),
       autoSnoozeEnabled: String(settings.autoSnoozeEnabled),
@@ -219,7 +219,62 @@ export async function sendSilentAlarmSchedulePush(elderId: string) {
       alarmButtonOrder: settings.alarmButtonOrder,
       alarmTakeBtnColor: settings.alarmTakeBtnColor,
       alarmSnoozeBtnColor: settings.alarmSnoozeBtnColor
-    })
+    }
+
+    if (!settingsOnly) {
+      // Respect FCM 4096-byte total UTF-8 data payload limit cleanly
+      const baseBytes = getFcmDataByteLength(payload) + Buffer.byteLength("medications", "utf8")
+      const maxMedsBytes = Math.max(0, 3600 - baseBytes)
+
+      let medicationsJson = JSON.stringify(items)
+      if (Buffer.byteLength(medicationsJson, "utf8") > maxMedsBytes) {
+        const compactItems = items.map(it => ({
+          id: it.id,
+          name: it.name,
+          dosage: it.dosage,
+          time: it.time,
+          frequency: it.frequency,
+          instructions: it.instructions,
+          elderId: it.elderId,
+          type: it.type,
+          ...(it.specialNoticeEnabled
+            ? {
+                specialNoticeEnabled: true,
+                specialNoticeType: it.specialNoticeType,
+                specialNoticeText:
+                  it.specialNoticeText && it.specialNoticeText.length > 80
+                    ? it.specialNoticeText.slice(0, 80) + "..."
+                    : it.specialNoticeText,
+                specialNoticeAudioUrl: it.specialNoticeAudioUrl,
+                specialNoticeMaxCount: it.specialNoticeMaxCount,
+                specialNoticeShownCount: it.specialNoticeShownCount,
+                specialNoticeVersion: it.specialNoticeVersion
+              }
+            : {})
+        }))
+        medicationsJson = JSON.stringify(compactItems)
+      }
+
+      if (Buffer.byteLength(medicationsJson, "utf8") > maxMedsBytes) {
+        const ultraCompactItems = items.map(it => ({
+          id: it.id,
+          name: it.name,
+          dosage: it.dosage,
+          time: it.time,
+          frequency: it.frequency,
+          instructions: it.instructions ? it.instructions.slice(0, 60) : "",
+          elderId: it.elderId,
+          type: it.type
+        }))
+        medicationsJson = JSON.stringify(ultraCompactItems)
+      }
+
+      if (Buffer.byteLength(medicationsJson, "utf8") <= maxMedsBytes) {
+        payload.medications = medicationsJson
+      }
+    }
+
+    await sendPushNotification(elderId, payload)
   } catch (err) {
     console.warn("[sendSilentAlarmSchedulePush] Error sending push:", err)
   }

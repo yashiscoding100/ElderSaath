@@ -39,7 +39,7 @@ export async function POST(req: Request) {
     }
 
     // Immediately sync updated snooze duration/text into Elder's phone memory via silent FCM
-    await sendSilentAlarmSchedulePush(elderId).catch(() => {})
+    await sendSilentAlarmSchedulePush(elderId, { settingsOnly: true }).catch(() => {})
 
     return NextResponse.json({ success: true })
   } catch (error) {

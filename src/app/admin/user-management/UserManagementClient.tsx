@@ -127,31 +127,39 @@ function ManagedUserCard({
 
   const [draft, setDraft] = useState<ManagedUserItem>(user)
   const [timerUnit, setTimerUnit] = useState<"SECONDS" | "MINUTES">(initialUnit)
-  const [timerValue, setTimerValue] = useState<number>(
-    initialUnit === "MINUTES" ? user.autoSnoozeAfterSeconds / 60 : user.autoSnoozeAfterSeconds
+  const [timerInput, setTimerInput] = useState<string>(
+    String(initialUnit === "MINUTES" ? user.autoSnoozeAfterSeconds / 60 : user.autoSnoozeAfterSeconds)
+  )
+  const [snoozeDurationInput, setSnoozeDurationInput] = useState<string>(
+    String(user.alarmSnoozeDuration)
   )
 
-  const computedAutoSeconds =
-    timerUnit === "MINUTES"
-      ? Math.round(Number(timerValue || 0) * 60)
-      : Math.round(Number(timerValue || 0))
+  const parsedTimerNumber = Number(timerInput)
+  const isTimerValid = timerInput.trim() !== "" && Number.isFinite(parsedTimerNumber)
+  const computedAutoSeconds = isTimerValid
+    ? Math.round(timerUnit === "MINUTES" ? parsedTimerNumber * 60 : parsedTimerNumber)
+    : 0
+
+  const parsedSnoozeDuration = Number(snoozeDurationInput)
+  const isSnoozeDurationValid = snoozeDurationInput.trim() !== "" && Number.isFinite(parsedSnoozeDuration)
 
   const resetDraftFromUser = () => {
     setDraft(user)
     const u: "SECONDS" | "MINUTES" =
       user.autoSnoozeAfterSeconds >= 60 && user.autoSnoozeAfterSeconds % 60 === 0 ? "MINUTES" : "SECONDS"
     setTimerUnit(u)
-    setTimerValue(u === "MINUTES" ? user.autoSnoozeAfterSeconds / 60 : user.autoSnoozeAfterSeconds)
+    setTimerInput(String(u === "MINUTES" ? user.autoSnoozeAfterSeconds / 60 : user.autoSnoozeAfterSeconds))
+    setSnoozeDurationInput(String(user.alarmSnoozeDuration))
     setStatusBanner(null)
   }
 
   const applyPresetSeconds = (seconds: number) => {
     if (seconds >= 60 && seconds % 60 === 0) {
       setTimerUnit("MINUTES")
-      setTimerValue(seconds / 60)
+      setTimerInput(String(seconds / 60))
     } else {
       setTimerUnit("SECONDS")
-      setTimerValue(seconds)
+      setTimerInput(String(seconds))
     }
   }
 
@@ -197,14 +205,14 @@ function ManagedUserCard({
 
   const handleSaveAll = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (draft.autoSnoozeEnabled && (computedAutoSeconds < 5 || computedAutoSeconds > 3600)) {
+    if (draft.autoSnoozeEnabled && (!isTimerValid || computedAutoSeconds < 5 || computedAutoSeconds > 3600)) {
       setStatusBanner({
         type: "error",
         text: "Auto-Snooze countdown must be between 5 seconds and 60 minutes (3600 seconds)."
       })
       return
     }
-    if (draft.alarmSnoozeDuration < 1 || draft.alarmSnoozeDuration > 180) {
+    if (!isSnoozeDurationValid || parsedSnoozeDuration < 1 || parsedSnoozeDuration > 180) {
       setStatusBanner({
         type: "error",
         text: "Snooze repeat interval must be between 1 and 180 minutes."
@@ -212,6 +220,7 @@ function ManagedUserCard({
       return
     }
 
+    const safeSnoozeMinutes = Math.round(parsedSnoozeDuration)
     setSaving(true)
     setStatusBanner(null)
     const nextSeconds = draft.autoSnoozeEnabled ? computedAutoSeconds : user.autoSnoozeAfterSeconds
@@ -230,7 +239,7 @@ function ManagedUserCard({
           id: user.id,
           autoSnoozeEnabled: draft.autoSnoozeEnabled,
           autoSnoozeAfterSeconds: nextSeconds,
-          alarmSnoozeDuration: draft.alarmSnoozeDuration,
+          alarmSnoozeDuration: safeSnoozeMinutes,
           alarmSnoozeText: draft.alarmSnoozeText,
           alarmButtonOrder: draft.alarmButtonOrder,
           alarmTakeBtnColor: safeTakeColor,
@@ -249,12 +258,14 @@ function ManagedUserCard({
       }
       const nextUser: ManagedUserItem = {
         ...draft,
+        alarmSnoozeDuration: safeSnoozeMinutes,
         alarmTakeBtnColor: safeTakeColor,
         alarmSnoozeBtnColor: safeSnoozeColor,
         autoSnoozeAfterSeconds: nextSeconds,
         blockMessage: draft.isBlocked ? draft.blockMessage : ""
       }
       setDraft(nextUser)
+      setSnoozeDurationInput(String(safeSnoozeMinutes))
       onUserUpdated(nextUser)
       setStatusBanner({
         type: "success",
@@ -467,18 +478,19 @@ function ManagedUserCard({
                           min={timerUnit === "SECONDS" ? 5 : 1}
                           max={timerUnit === "SECONDS" ? 3600 : 60}
                           required={draft.autoSnoozeEnabled}
-                          value={timerValue}
-                          onChange={(e) => setTimerValue(Math.max(1, Number(e.target.value)))}
+                          value={timerInput}
+                          onChange={(e) => setTimerInput(e.target.value)}
                           className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-900 font-bold text-sm focus:ring-2 focus:ring-violet-500 outline-none"
                         />
                         <select
                           value={timerUnit}
                           onChange={(e) => {
                             const next = e.target.value as "SECONDS" | "MINUTES"
+                            const baseNum = isTimerValid ? parsedTimerNumber : 0
                             if (next === "MINUTES" && timerUnit === "SECONDS") {
-                              setTimerValue(Math.max(1, Math.round(timerValue / 60)))
+                              setTimerInput(String(Math.max(1, Math.round(baseNum / 60))))
                             } else if (next === "SECONDS" && timerUnit === "MINUTES") {
-                              setTimerValue(timerValue * 60)
+                              setTimerInput(String(Math.max(5, Math.round(baseNum * 60))))
                             }
                             setTimerUnit(next)
                           }}
@@ -501,7 +513,7 @@ function ManagedUserCard({
               {/* Manual Snooze & Alarm Preferences */}
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
                 <h4 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
-                  <span>🔔</span> Alarm & Snooze Preferences
+                  <span>🔔</span> Alarm &amp; Snooze Preferences
                 </h4>
 
                 <div>
@@ -513,10 +525,15 @@ function ManagedUserCard({
                       type="number"
                       min={1}
                       max={180}
-                      value={draft.alarmSnoozeDuration}
-                      onChange={(e) =>
-                        setDraft({ ...draft, alarmSnoozeDuration: Math.max(1, Number(e.target.value) || 1) })
-                      }
+                      value={snoozeDurationInput}
+                      onChange={(e) => {
+                        const raw = e.target.value
+                        setSnoozeDurationInput(raw)
+                        const parsed = Number(raw)
+                        if (raw.trim() !== "" && Number.isFinite(parsed)) {
+                          setDraft({ ...draft, alarmSnoozeDuration: Math.round(parsed) })
+                        }
+                      }}
                       className="w-24 px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-900 font-bold text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                     />
                     <div className="flex flex-wrap gap-1">
@@ -524,7 +541,10 @@ function ManagedUserCard({
                         <button
                           key={m}
                           type="button"
-                          onClick={() => setDraft({ ...draft, alarmSnoozeDuration: m })}
+                          onClick={() => {
+                            setSnoozeDurationInput(String(m))
+                            setDraft({ ...draft, alarmSnoozeDuration: m })
+                          }}
                           className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition ${
                             draft.alarmSnoozeDuration === m
                               ? "bg-blue-600 text-white border-blue-600"

@@ -139,9 +139,10 @@ export function MedicationAlarmSync() {
       }
 
       // 1. Fetch Medications and Tasks with Alarms in parallel
+      const cacheBust = Date.now()
       const [medsRes, tasksRes] = await Promise.all([
-        fetch("/api/medications").catch(() => null),
-        fetch("/api/tasks").catch(() => null)
+        fetch(`/api/medications?_t=${cacheBust}`, { cache: "no-store" }).catch(() => null),
+        fetch(`/api/tasks?_t=${cacheBust}`, { cache: "no-store" }).catch(() => null)
       ])
 
       const meds: SyncedMedicationDto[] = medsRes && medsRes.ok ? await medsRes.json() : []
@@ -246,7 +247,7 @@ export function MedicationAlarmSync() {
       }
 
       // 2. Sync SOS Widget Settings
-      const sosRes = await fetch("/api/sos/settings").catch(() => null)
+      const sosRes = await fetch(`/api/sos/settings?_t=${cacheBust}`, { cache: "no-store" }).catch(() => null)
       if (sosRes && sosRes.ok) {
         const sosData = await sosRes.json()
         if (sosData?.config) {
@@ -292,7 +293,7 @@ export function MedicationAlarmSync() {
       }
 
       // 4. Sync Health Check Preferences & Required Vitals + Alarm & Auto-Snooze Config to Phone Memory
-      const prefRes = await fetch("/api/elder/preferences").catch(() => null)
+      const prefRes = await fetch(`/api/elder/preferences?_t=${cacheBust}`, { cache: "no-store" }).catch(() => null)
       if (prefRes && prefRes.ok) {
         const prefData = await prefRes.json()
         if (prefData?.requiredVitals && AlarmSyncPlugin && typeof AlarmSyncPlugin.syncHealthPreferences === "function") {
@@ -359,15 +360,21 @@ export function MedicationAlarmSync() {
     // Initial sync on app load
     fetchAndSync()
 
-    // Sync when coming back online or switching back to the app
+    // Sync when coming back online, switching back to the app, or foregrounding the screen
     const handleOnline = () => fetchAndSync()
     const handleFocus = () => fetchAndSync()
     const handleCustomSync = () => fetchAndSync()
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        fetchAndSync()
+      }
+    }
 
     window.addEventListener("online", handleOnline)
     window.addEventListener("focus", handleFocus)
     window.addEventListener("eldersaath:refresh-medications", handleCustomSync)
     window.addEventListener("eldersaath:refresh-tasks", handleCustomSync)
+    document.addEventListener("visibilitychange", handleVisibilityChange)
 
     // Periodic check every 5 minutes in background
     const interval = setInterval(fetchAndSync, 5 * 60 * 1000)
@@ -377,6 +384,7 @@ export function MedicationAlarmSync() {
       window.removeEventListener("focus", handleFocus)
       window.removeEventListener("eldersaath:refresh-medications", handleCustomSync)
       window.removeEventListener("eldersaath:refresh-tasks", handleCustomSync)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
       clearInterval(interval)
     }
   }, [userId, userRole, fetchAndSync])

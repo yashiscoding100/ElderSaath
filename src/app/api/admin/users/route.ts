@@ -181,7 +181,7 @@ export async function PATCH(req: Request) {
       alarmTakeBtnColor !== undefined ||
       alarmSnoozeBtnColor !== undefined
     ) {
-      await sendSilentAlarmSchedulePush(id).catch(() => {})
+      await sendSilentAlarmSchedulePush(id, { settingsOnly: true }).catch(() => {})
     }
 
     return NextResponse.json({ message: "User updated successfully" }, { status: 200 })
