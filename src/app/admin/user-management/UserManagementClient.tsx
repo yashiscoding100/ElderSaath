@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useRef } from "react"
 import { useRouter } from "next/navigation"
 import {
   Search,
@@ -11,7 +11,14 @@ import {
   AlertTriangle,
   ShieldAlert,
   ArrowUpDown,
-  RotateCcw
+  RotateCcw,
+  Video,
+  Volume2,
+  FileText,
+  Upload,
+  Send,
+  Loader2,
+  Sparkles
 } from "lucide-react"
 
 const DEFAULT_TAKE_BTN_COLOR = "#10B981"
@@ -859,6 +866,10 @@ function ManagedUserCard({
             </div>
           </div>
 
+          {user.role === "ELDER" && (
+            <ElderSpecialNoticeSection elderId={user.id} elderName={user.name || user.email || "Elder"} />
+          )}
+
           {statusBanner && (
             <div
               className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 ${
@@ -889,6 +900,636 @@ function ManagedUserCard({
             </button>
           </div>
         </form>
+      )}
+    </div>
+  )
+}
+
+function ElderSpecialNoticeSection({ elderId, elderName }: { elderId: string; elderName: string }) {
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [enabled, setEnabled] = useState(false)
+  const [type, setType] = useState<"TEXT" | "VOICE" | "VIDEO">("TEXT")
+  const [text, setText] = useState("")
+  const [mediaUrl, setMediaUrl] = useState("")
+  const [maxCount, setMaxCount] = useState(5)
+  const [uploading, setUploading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [banner, setBanner] = useState<{ type: "success" | "error"; text: string } | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    setBanner(null)
+    try {
+      const isVideo = file.type.startsWith("video/") || /\.(mp4|webm|mov|3gp)$/i.test(file.name)
+      const reader = new FileReader()
+      reader.onload = async () => {
+        try {
+          const dataUrl = reader.result as string
+          const res = await fetch("/api/medications/notice-upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              filename: file.name,
+              mimeType: file.type || (isVideo ? "video/mp4" : "audio/mpeg"),
+              dataUrl
+            })
+          })
+          const data = (await res.json()) as { url?: string; message?: string }
+          if (!res.ok || !data.url) throw new Error(data.message || "Upload failed")
+          setMediaUrl(data.url)
+          setType(isVideo ? "VIDEO" : "VOICE")
+          setBanner({ type: "success", text: `✓ ${isVideo ? "Video" : "Audio"} uploaded!` })
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : "Upload failed"
+          setBanner({ type: "error", text: msg })
+        } finally {
+          setUploading(false)
+        }
+      }
+      reader.readAsDataURL(file)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "File read failed"
+      setBanner({ type: "error", text: msg })
+      setUploading(false)
+    }
+  }
+
+  const handleSaveNotice = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    setBanner(null)
+    try {
+      const res = await fetch("/api/admin/post-alarm-notice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          elderId,
+          specialNoticeEnabled: enabled,
+          specialNoticeType: type,
+          specialNoticeText: text,
+          specialNoticeAudioUrl: mediaUrl,
+          specialNoticeMaxCount: maxCount,
+          applyToAllAlarms: true
+        })
+      })
+      const data = (await res.json()) as { message?: string }
+      if (!res.ok) throw new Error(data.message || "Failed to save notice")
+      setBanner({
+        type: "success",
+        text: `✓ Post-alarm notice saved for ${elderName} & synced to device memory!`
+      })
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to save notice"
+      setBanner({ type: "error", text: msg })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50/40 p-4 space-y-3">
+      <div className="flex items-center justify-between cursor-pointer select-none" onClick={() => setIsExpanded(!isExpanded)}>
+        <div className="flex items-center gap-2.5">
+          <span className="text-xl">📢</span>
+          <div>
+            <h4 className="text-sm font-bold text-slate-900">Post-Alarm Notice (Text, Voice, or Video)</h4>
+            <p className="text-xs text-slate-500">Configure text, voice, or video message played after taking medicine on this device.</p>
+          </div>
+        </div>
+        <button type="button" className="p-1 rounded-lg text-slate-500 hover:bg-amber-100/60">
+          {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        </button>
+      </div>
+
+      {isExpanded && (
+        <form onSubmit={handleSaveNotice} className="pt-3 border-t border-amber-200/80 space-y-4">
+          <ToggleRow
+            label="Enable Post-Alarm Special Notice"
+            description="When enabled, the elder will see this notice right after tapping Take Medicine."
+            checked={enabled}
+            onChange={setEnabled}
+            accentClass="peer-checked:bg-amber-600"
+          />
+
+          {enabled && (
+            <div className="space-y-4 pt-1">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Notice Type
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setType("TEXT")}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+                      type === "TEXT"
+                        ? "bg-amber-600 text-white border-amber-600 shadow-sm"
+                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Text Notice</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setType("VOICE")}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+                      type === "VOICE"
+                        ? "bg-amber-600 text-white border-amber-600 shadow-sm"
+                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    <Volume2 className="w-3.5 h-3.5" />
+                    <span>Voice Message</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setType("VIDEO")}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+                      type === "VIDEO"
+                        ? "bg-amber-600 text-white border-amber-600 shadow-sm"
+                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    <Video className="w-3.5 h-3.5" />
+                    <span>Video Notice</span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  {type === "VIDEO" ? "Video Caption / Explanation" : "Notice Message"}
+                </label>
+                <textarea
+                  rows={2}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder={
+                    type === "VIDEO"
+                      ? "e.g. Please watch this demonstration on using your new medication."
+                      : "e.g. Remember to take the smaller blue tablet after your meal."
+                  }
+                  className="w-full p-2.5 bg-white border border-amber-300 rounded-xl text-xs font-medium text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              {(type === "VOICE" || type === "VIDEO") && (
+                <div className="space-y-2 p-3 bg-white rounded-xl border border-amber-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800">
+                      {type === "VIDEO" ? "Video File or URL" : "Voice Audio File or URL"}
+                    </span>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept={type === "VIDEO" ? "video/*,.mp4,.webm,.mov,.3gp" : "audio/*,.mp3,.wav,.ogg,.m4a"}
+                      className="hidden"
+                      onChange={handleFileUpload}
+                    />
+                    <button
+                      type="button"
+                      disabled={uploading}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition disabled:opacity-50"
+                    >
+                      {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                      <span>{uploading ? "Uploading..." : `Upload ${type === "VIDEO" ? "Video" : "Audio"}`}</span>
+                    </button>
+                  </div>
+
+                  <input
+                    type="url"
+                    value={mediaUrl.startsWith("data:") ? "" : mediaUrl}
+                    onChange={(e) => setMediaUrl(e.target.value)}
+                    placeholder="https://.../media-file.mp4"
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium outline-none focus:bg-white focus:ring-2 focus:ring-amber-500"
+                  />
+
+                  {mediaUrl && (
+                    <div className="pt-2">
+                      {type === "VIDEO" ? (
+                        <video controls src={mediaUrl} className="w-full max-h-40 rounded-lg bg-black object-contain" />
+                      ) : (
+                        <audio controls src={mediaUrl} className="w-full h-8" />
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700">Repeat Limit</label>
+                  <p className="text-[11px] text-slate-500">Number of times this notice is shown before auto-stopping.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={maxCount}
+                    onChange={(e) => setMaxCount(Math.max(1, Number(e.target.value) || 1))}
+                    className="w-16 p-2 bg-white border border-amber-300 rounded-lg text-xs font-bold text-center"
+                  />
+                  <span className="text-xs font-bold text-slate-500">times</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {banner && (
+            <div
+              className={`p-2.5 rounded-xl text-xs font-bold flex items-center gap-2 ${
+                banner.type === "success"
+                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                  : "bg-rose-50 text-rose-700 border border-rose-200"
+              }`}
+            >
+              {banner.type === "success" ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
+              <span>{banner.text}</span>
+            </div>
+          )}
+
+          <div className="flex justify-end pt-2">
+            <button
+              type="submit"
+              disabled={saving || uploading}
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shadow-md shadow-amber-600/20 disabled:opacity-50 transition flex items-center gap-1.5"
+            >
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+              <span>{saving ? "Saving Notice..." : "Save Post-Alarm Notice for this Elder"}</span>
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
+  )
+}
+
+function AwarenessPopupBroadcaster({ elders }: { elders: ManagedUserItem[] }) {
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [targetId, setTargetId] = useState<string>("ALL")
+  const [noticeType, setNoticeType] = useState<"TEXT" | "VOICE" | "VIDEO">("VIDEO")
+  const [title, setTitle] = useState("💧 Daily Hydration & Health Reminder")
+  const [message, setMessage] = useState("Please drink a fresh glass of water now to stay healthy and hydrated.")
+  const [mediaUrl, setMediaUrl] = useState("")
+  const [uploading, setUploading] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [banner, setBanner] = useState<{ type: "success" | "error"; text: string } | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const PRESETS = [
+    {
+      label: "💧 Hydration",
+      type: "TEXT" as const,
+      title: "💧 Daily Hydration & Health Reminder",
+      message: "Please drink a full glass of fresh water now to stay hydrated and energetic.",
+      mediaUrl: ""
+    },
+    {
+      label: "🚶 Fall Prevention",
+      type: "TEXT" as const,
+      title: "🚶 Fall Prevention & Balance Alert",
+      message: "Take your time when standing up. Turn on bright lights before walking, and hold railings firmly.",
+      mediaUrl: ""
+    },
+    {
+      label: "💊 Medicine Safety",
+      type: "TEXT" as const,
+      title: "💊 Medication Caution & Reminder",
+      message: "Always take your prescribed medicines with clean drinking water and check dosage labels carefully.",
+      mediaUrl: ""
+    },
+    {
+      label: "🎥 Health Video",
+      type: "VIDEO" as const,
+      title: "🎥 General Wellness & Exercise Video",
+      message: "Watch this guided mobility and stretching video recommended by your healthcare team.",
+      mediaUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"
+    }
+  ]
+
+  const handleApplyPreset = (p: typeof PRESETS[0]) => {
+    setTitle(p.title)
+    setMessage(p.message)
+    setNoticeType(p.type)
+    setMediaUrl(p.mediaUrl)
+  }
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    setBanner(null)
+    try {
+      const isVideo = file.type.startsWith("video/") || /\.(mp4|webm|mov|3gp)$/i.test(file.name)
+      const reader = new FileReader()
+      reader.onload = async () => {
+        try {
+          const dataUrl = reader.result as string
+          const res = await fetch("/api/medications/notice-upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              filename: file.name,
+              mimeType: file.type || (isVideo ? "video/mp4" : "audio/mpeg"),
+              dataUrl
+            })
+          })
+          const data = (await res.json()) as { url?: string; message?: string }
+          if (!res.ok || !data.url) throw new Error(data.message || "Upload failed")
+          setMediaUrl(data.url)
+          setNoticeType(isVideo ? "VIDEO" : "VOICE")
+          setBanner({ type: "success", text: `✓ ${isVideo ? "Video" : "Audio"} uploaded!` })
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : "Upload failed"
+          setBanner({ type: "error", text: msg })
+        } finally {
+          setUploading(false)
+        }
+      }
+      reader.readAsDataURL(file)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "File read failed"
+      setBanner({ type: "error", text: msg })
+      setUploading(false)
+    }
+  }
+
+  const handleDispatchPopup = async () => {
+    if (!title.trim() || !message.trim()) {
+      setBanner({ type: "error", text: "Please provide a title and message." })
+      return
+    }
+    setSending(true)
+    setBanner(null)
+    try {
+      const res = await fetch("/api/admin/awareness-popup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          elderId: targetId,
+          title,
+          message,
+          noticeType,
+          mediaUrl
+        })
+      })
+      const data = (await res.json()) as { recipientsCount?: number; message?: string }
+      if (!res.ok) throw new Error(data.message || "Failed to dispatch popup")
+      setBanner({
+        type: "success",
+        text: `🚀 Success! Fullscreen popup dispatched to ${data.recipientsCount ?? 1} elder phone(s) immediately over the lock screen!`
+      })
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to dispatch popup"
+      setBanner({ type: "error", text: msg })
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <div className="bg-gradient-to-r from-violet-900 via-indigo-900 to-slate-900 rounded-3xl p-6 text-white shadow-xl border border-violet-700/50 space-y-5">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-violet-600/30 border border-violet-400/40 flex items-center justify-center text-2xl shrink-0">
+            📢
+          </div>
+          <div>
+            <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-violet-500/20 border border-violet-400/30 text-violet-300 text-[11px] font-bold uppercase tracking-wider mb-1">
+              <Sparkles className="w-3 h-3" />
+              <span>Direct Phone Screen Popup Tool</span>
+            </div>
+            <h3 className="text-lg font-black text-white">General Awareness Screen & Video Popup</h3>
+            <p className="text-xs text-violet-200">
+              Wakes up the elder&apos;s phone screen immediately over the lock screen (just like an alarm popup) to display text, voice, or video awareness notices.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="self-start md:self-auto px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-xs font-bold transition flex items-center gap-1.5"
+        >
+          <span>{isExpanded ? "Hide Broadcaster" : "Open Broadcaster"}</span>
+          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        </button>
+      </div>
+
+      {isExpanded && (
+        <div className="pt-4 border-t border-violet-700/60 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Left: Configuration controls */}
+            <div className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-bold text-violet-200 mb-1">Target Phone(s)</label>
+                <select
+                  value={targetId}
+                  onChange={(e) => setTargetId(e.target.value)}
+                  className="w-full p-2.5 bg-slate-800/80 border border-violet-500/40 rounded-xl text-xs font-bold text-white outline-none focus:ring-2 focus:ring-violet-400"
+                >
+                  <option value="ALL">🌐 All Elder Accounts ({elders.length} devices)</option>
+                  {elders.map((el) => (
+                    <option key={el.id} value={el.id}>
+                      👤 {el.name || el.email || "Elder"} ({el.id.slice(0, 8)}...)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-violet-200">Notice Type</label>
+                  <div className="flex gap-1">
+                    {PRESETS.map((p) => (
+                      <button
+                        key={p.label}
+                        type="button"
+                        onClick={() => handleApplyPreset(p)}
+                        className="px-2 py-0.5 rounded-md bg-violet-800/70 hover:bg-violet-700 text-[10px] font-bold text-violet-200 border border-violet-500/40 transition"
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNoticeType("TEXT")}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+                      noticeType === "TEXT"
+                        ? "bg-violet-600 text-white border-violet-400 shadow-md"
+                        : "bg-slate-800/60 text-slate-300 border-violet-700/50 hover:bg-slate-800"
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Text Notice</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNoticeType("VOICE")}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+                      noticeType === "VOICE"
+                        ? "bg-violet-600 text-white border-violet-400 shadow-md"
+                        : "bg-slate-800/60 text-slate-300 border-violet-700/50 hover:bg-slate-800"
+                    }`}
+                  >
+                    <Volume2 className="w-3.5 h-3.5" />
+                    <span>Voice Note</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNoticeType("VIDEO")}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+                      noticeType === "VIDEO"
+                        ? "bg-violet-600 text-white border-violet-400 shadow-md"
+                        : "bg-slate-800/60 text-slate-300 border-violet-700/50 hover:bg-slate-800"
+                    }`}
+                  >
+                    <Video className="w-3.5 h-3.5" />
+                    <span>Video Popup</span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-violet-200 mb-1">Popup Screen Title</label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g. Daily Hydration Reminder"
+                  className="w-full p-2.5 bg-slate-800/80 border border-violet-500/40 rounded-xl text-xs font-bold text-white outline-none focus:ring-2 focus:ring-violet-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-violet-200 mb-1">
+                  {noticeType === "VIDEO" ? "Video Caption / Text" : "Notice Message Body"}
+                </label>
+                <textarea
+                  rows={2}
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder="Message displayed prominently on the phone screen..."
+                  className="w-full p-2.5 bg-slate-800/80 border border-violet-500/40 rounded-xl text-xs font-medium text-white outline-none focus:ring-2 focus:ring-violet-400"
+                />
+              </div>
+
+              {(noticeType === "VOICE" || noticeType === "VIDEO") && (
+                <div className="space-y-2 p-3 bg-slate-800/60 rounded-xl border border-violet-500/30">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-violet-200">
+                      {noticeType === "VIDEO" ? "Video File or URL" : "Audio File or URL"}
+                    </span>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept={noticeType === "VIDEO" ? "video/*,.mp4,.webm,.mov,.3gp" : "audio/*,.mp3,.wav,.ogg,.m4a"}
+                      className="hidden"
+                      onChange={handleFileUpload}
+                    />
+                    <button
+                      type="button"
+                      disabled={uploading}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-2.5 py-1 bg-violet-700/60 hover:bg-violet-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition disabled:opacity-50"
+                    >
+                      {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                      <span>{uploading ? "Uploading..." : `Upload ${noticeType === "VIDEO" ? "Video" : "Audio"}`}</span>
+                    </button>
+                  </div>
+
+                  <input
+                    type="url"
+                    value={mediaUrl.startsWith("data:") ? "" : mediaUrl}
+                    onChange={(e) => setMediaUrl(e.target.value)}
+                    placeholder="https://.../video.mp4"
+                    className="w-full p-2 bg-slate-900 border border-violet-600/40 rounded-lg text-xs font-medium text-white outline-none focus:ring-2 focus:ring-violet-400"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Right: Live Preview of how the popup appears on the Elder's Phone */}
+            <div className="rounded-2xl bg-black p-4 border border-violet-500/40 text-center flex flex-col justify-between">
+              <div className="space-y-2">
+                <p className="text-[10px] font-black tracking-widest text-amber-400 uppercase">
+                  📢 LIVE PHONE POPUP SCREEN PREVIEW
+                </p>
+                <div className="inline-block px-3 py-1 bg-amber-500/20 text-amber-300 border border-amber-400/40 rounded-full text-[10px] font-extrabold">
+                  📢 GENERAL AWARENESS NOTICE
+                </div>
+                <h4 className="text-sm font-black text-white">{title || "Notice Title"}</h4>
+
+                {noticeType === "VIDEO" && (
+                  <div className="rounded-xl overflow-hidden bg-slate-900 border border-slate-700 aspect-video flex items-center justify-center">
+                    {mediaUrl ? (
+                      <video controls src={mediaUrl} className="w-full h-full object-contain" />
+                    ) : (
+                      <div className="text-center p-3 text-slate-400 space-y-1">
+                        <Video className="w-8 h-8 mx-auto text-violet-400 opacity-60" />
+                        <p className="text-[10px]">Video will play here over lock screen</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {noticeType === "VOICE" && (
+                  <div className="p-3 bg-slate-900 rounded-xl border border-slate-700">
+                    <p className="text-xs text-sky-300 font-bold mb-1">🔊 Playing voice notice...</p>
+                    {mediaUrl ? (
+                      <audio controls src={mediaUrl} className="w-full h-8" />
+                    ) : (
+                      <Volume2 className="w-6 h-6 mx-auto text-violet-400 opacity-60" />
+                    )}
+                  </div>
+                )}
+
+                <p className="text-xs text-slate-200 bg-slate-900/80 p-2.5 rounded-xl border border-slate-700 text-left">
+                  {message || "Message body..."}
+                </p>
+              </div>
+
+              <div className="pt-3">
+                <div className="w-full py-2.5 rounded-full bg-slate-800 text-white font-black text-xs border border-white/20">
+                  ✓ OK, I HAVE SEEN THIS — CLOSE
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {banner && (
+            <div
+              className={`p-3 rounded-xl text-xs font-bold flex items-center gap-2 ${
+                banner.type === "success"
+                  ? "bg-emerald-950/80 text-emerald-200 border border-emerald-500/50"
+                  : "bg-rose-950/80 text-rose-200 border border-rose-500/50"
+              }`}
+            >
+              {banner.type === "success" ? <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" /> : <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />}
+              <span>{banner.text}</span>
+            </div>
+          )}
+
+          <div className="flex justify-end pt-2">
+            <button
+              type="button"
+              disabled={sending || uploading}
+              onClick={handleDispatchPopup}
+              className="px-6 py-3 rounded-2xl bg-gradient-to-r from-violet-500 to-fuchsia-600 hover:from-violet-600 hover:to-fuchsia-700 text-white font-black text-sm shadow-lg shadow-fuchsia-600/30 transition disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+            >
+              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              <span>{sending ? "Waking Phone Screens..." : "🚀 POPUP ON PHONE SCREEN NOW"}</span>
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )
@@ -947,6 +1588,9 @@ export function UserManagementClient({ initialUsers }: { initialUsers: ManagedUs
           <p className="text-3xl font-black text-slate-900 mt-1">{stats.blocked}</p>
         </div>
       </div>
+
+      {/* Awareness Screen & Video Popup Tool */}
+      <AwarenessPopupBroadcaster elders={users.filter((u) => u.role === "ELDER")} />
 
       {/* Filter & Search Toolbar */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">

@@ -24,6 +24,106 @@ public class MyMessagingService extends MessagingService {
 
     @Override
     public void onMessageReceived(RemoteMessage remoteMessage) {
+
+        // 0. FULLSCREEN AWARENESS POPUP / VIDEO NOTICE: Wakes up phone screen anytime like an alarm
+        if (remoteMessage.getData().size() > 0 &&
+            ("POPUP_NOTICE".equals(remoteMessage.getData().get("type")) || "AWARENESS_NOTICE".equals(remoteMessage.getData().get("type")))) {
+            Log.i("ALARM_DEBUG", "FCM POPUP_NOTICE / AWARENESS_NOTICE RECEIVED - Waking device for popup");
+
+            String title = remoteMessage.getData().get("title");
+            if (title == null || title.trim().isEmpty()) title = "Health & Wellness Awareness";
+
+            String message = remoteMessage.getData().get("message");
+            if (message == null || message.trim().isEmpty()) message = remoteMessage.getData().get("body");
+            if (message == null) message = "Important announcement from your care team.";
+
+            String noticeType = remoteMessage.getData().get("noticeType");
+            if (noticeType == null || noticeType.trim().isEmpty()) noticeType = "TEXT";
+
+            String mediaUrl = remoteMessage.getData().get("mediaUrl");
+            String elderId = remoteMessage.getData().get("elderId");
+
+            try {
+                // 1. FORCE THE CPU AND SCREEN AWAKE
+                PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+                if (powerManager != null) {
+                    PowerManager.WakeLock wakeLock = powerManager.newWakeLock(
+                        PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP | PowerManager.ON_AFTER_RELEASE,
+                        "ElderSaath::AwarenessPopupWakeLock"
+                    );
+                    wakeLock.acquire(3 * 60 * 1000L);
+                }
+
+                // 2. High-Priority Notification Channel for Awareness Popups
+                NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                String channelId = "eldersaath_awareness_notices_v1";
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && notificationManager != null) {
+                    NotificationChannel channel = new NotificationChannel(
+                        channelId,
+                        "Awareness Notices & Videos",
+                        NotificationManager.IMPORTANCE_HIGH
+                    );
+                    channel.setDescription("Important health, awareness, and video announcements");
+                    channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+                    channel.setBypassDnd(true);
+                    channel.enableVibration(true);
+                    channel.setVibrationPattern(new long[]{0, 350, 200, 350});
+                    notificationManager.createNotificationChannel(channel);
+                }
+
+                // 3. Prepare Full-Screen Intent pointing to AlarmActivity in awareness mode
+                Intent fullScreenIntent = new Intent(this, AlarmActivity.class);
+                fullScreenIntent.putExtra("isAwarenessNotice", true);
+                fullScreenIntent.putExtra("type", "POPUP_NOTICE");
+                fullScreenIntent.putExtra("label", title);
+                fullScreenIntent.putExtra("body", message);
+                fullScreenIntent.putExtra("specialNoticeType", noticeType);
+                fullScreenIntent.putExtra("specialNoticeText", message);
+                fullScreenIntent.putExtra("specialNoticeAudioUrl", mediaUrl);
+                fullScreenIntent.putExtra("triggerNonce", System.currentTimeMillis());
+                if (elderId != null && !elderId.trim().isEmpty()) fullScreenIntent.putExtra("elderId", elderId);
+
+                fullScreenIntent.setFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK |
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP |
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP |
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                );
+
+                int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) flags |= PendingIntent.FLAG_IMMUTABLE;
+
+                int reqCode = 88000 + (int) (System.currentTimeMillis() % 10000);
+                PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(this, reqCode, fullScreenIntent, flags);
+
+                NotificationCompat.Builder builder = new NotificationCompat.Builder(this, channelId)
+                    .setSmallIcon(android.R.drawable.ic_dialog_info)
+                    .setContentTitle(title)
+                    .setContentText(message)
+                    .setPriority(NotificationCompat.PRIORITY_MAX)
+                    .setCategory(NotificationCompat.CATEGORY_ALARM)
+                    .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                    .setAutoCancel(true)
+                    .setFullScreenIntent(fullScreenPendingIntent, true)
+                    .setContentIntent(fullScreenPendingIntent);
+
+                if (notificationManager != null) {
+                    notificationManager.notify(reqCode, builder.build());
+                }
+
+                // 4. AGGRESSIVELY FORCE LAUNCH ACTIVITY DIRECTLY OVER LOCKSCREEN
+                try {
+                    startActivity(fullScreenIntent);
+                    Log.i("ALARM_DEBUG", "Awareness popup Activity launched directly!");
+                } catch (Exception e1) {
+                    Log.w("ALARM_DEBUG", "Direct startActivity for popup failed, fullScreenIntent will handle: " + e1.getMessage());
+                }
+            } catch (Exception e) {
+                Log.e("ALARM_DEBUG", "Error displaying awareness popup", e);
+            }
+            return;
+        }
         
         // 1. SILENT BACKGROUND SYNC: Update offline alarms from cloud without ringing
         if (remoteMessage.getData().size() > 0 && "SYNC_MEDICATIONS".equals(remoteMessage.getData().get("type"))) {

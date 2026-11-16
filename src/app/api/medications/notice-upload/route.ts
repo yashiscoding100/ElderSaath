@@ -4,11 +4,19 @@ import { put } from "@vercel/blob"
 
 export const dynamic = "force-dynamic"
 
-const MAX_BINARY_BYTES = 4.5 * 1024 * 1024
+const MAX_BINARY_BYTES = 12 * 1024 * 1024
 
-function detectAudioMime(rawMime: string | null | undefined, filename: string): string {
+function detectMediaMime(rawMime: string | null | undefined, filename: string): string {
   const lowerMime = (rawMime || "").split(";")[0].trim().toLowerCase()
   const lowerName = filename.toLowerCase()
+
+  if (lowerMime.startsWith("video/")) {
+    if (lowerMime === "video/mp4") return "video/mp4"
+    if (lowerMime === "video/webm") return "video/webm"
+    if (lowerMime === "video/3gpp") return "video/3gpp"
+    if (lowerMime === "video/quicktime") return "video/quicktime"
+    return lowerMime
+  }
 
   if (lowerMime.startsWith("audio/")) {
     if (lowerMime === "audio/mp3") return "audio/mpeg"
@@ -17,12 +25,14 @@ function detectAudioMime(rawMime: string | null | undefined, filename: string): 
     return lowerMime
   }
 
+  if (lowerName.endsWith(".mp4")) return "video/mp4"
+  if (lowerName.endsWith(".webm")) return "video/webm"
+  if (lowerName.endsWith(".mov")) return "video/quicktime"
+  if (lowerName.endsWith(".3gp")) return "video/3gpp"
   if (lowerName.endsWith(".wav")) return "audio/wav"
   if (lowerName.endsWith(".ogg") || lowerName.endsWith(".opus")) return "audio/ogg"
-  if (lowerName.endsWith(".m4a") || lowerName.endsWith(".mp4")) return "audio/mp4"
+  if (lowerName.endsWith(".m4a")) return "audio/mp4"
   if (lowerName.endsWith(".aac")) return "audio/aac"
-  if (lowerName.endsWith(".webm")) return "audio/webm"
-  if (lowerName.endsWith(".3gp")) return "audio/3gpp"
   if (lowerName.endsWith(".amr")) return "audio/amr"
   if (lowerName.endsWith(".flac")) return "audio/flac"
   return "audio/mpeg"
@@ -106,7 +116,7 @@ export async function POST(req: Request) {
 
     const cleanName = rawFilename.replace(/[^a-zA-Z0-9._-]/g, "_")
     const filename = `med-notice-${Date.now()}-${cleanName}`
-    const detectedMime = detectAudioMime(rawMime, cleanName)
+    const detectedMime = detectMediaMime(rawMime, cleanName)
 
     if (process.env.BLOB_READ_WRITE_TOKEN) {
       try {

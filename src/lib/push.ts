@@ -1,7 +1,7 @@
-import webpush from "web-push"
+import webpush, { type PushSubscription } from "web-push"
 import { prisma } from "./prisma"
 import { initializeApp, getApps, cert } from 'firebase-admin/app'
-import { getMessaging } from 'firebase-admin/messaging'
+import { getMessaging, type Message } from 'firebase-admin/messaging'
 import fs from 'fs'
 import path from 'path'
 
@@ -71,8 +71,8 @@ export function ensureFirebaseInit(): boolean {
       firebaseInitialized = true
       return true
     }
-  } catch (e: any) {
-    firebaseInitError = e.message || "Unknown init error"
+  } catch (e: unknown) {
+    firebaseInitError = e instanceof Error ? e.message : "Unknown init error"
     console.error("Firebase admin init error:", e)
   }
 
@@ -122,9 +122,10 @@ export async function sendPushNotification(userId: string, payload: Record<strin
       const token = sub.endpoint.replace("fcm:", "")
       const isAlarm = payload.type === 'ALARM'
       const isSilentSync = payload.type === 'SYNC_MEDICATIONS'
+      const isPopupNotice = payload.type === 'POPUP_NOTICE' || payload.type === 'AWARENESS_NOTICE'
       
-      const message: any = {
-        ...(isAlarm || isSilentSync ? {} : {
+      const message: Message = {
+        ...(isAlarm || isSilentSync || isPopupNotice ? {} : {
           notification: {
             title: (payload.title as string) || (payload.label as string) || "Notification",
             body: (payload.body as string) || "",
@@ -134,7 +135,7 @@ export async function sendPushNotification(userId: string, payload: Record<strin
         token: token,
         android: {
           priority: "high" as const,
-          ...(isAlarm || isSilentSync ? {} : {
+          ...(isAlarm || isSilentSync || isPopupNotice ? {} : {
             notification: {
               channelId: "sos_alarms",
               sound: "default"
@@ -168,9 +169,10 @@ export async function sendPushNotification(userId: string, payload: Record<strin
         const response = await getMessaging().send(message)
         console.log(`[Push] Successfully sent FCM message to user ${userId}, response: ${response}`)
         return response
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("Firebase push error:", error)
-        if (error.code === 'messaging/registration-token-not-registered') {
+        const fcmErr = error as { code?: string }
+        if (fcmErr && fcmErr.code === 'messaging/registration-token-not-registered') {
           await prisma.pushSubscription.delete({ where: { id: sub.id } })
         }
         throw error
@@ -181,7 +183,7 @@ export async function sendPushNotification(userId: string, payload: Record<strin
     else {
       if (!publicKey || !privateKey) return
       
-      const pushSubscription = {
+      const pushSubscription: PushSubscription = {
         endpoint: sub.endpoint,
         keys: {
           p256dh: sub.p256dh,
@@ -191,11 +193,12 @@ export async function sendPushNotification(userId: string, payload: Record<strin
       
       try {
         return await webpush.sendNotification(
-          pushSubscription as any,
+          pushSubscription,
           JSON.stringify(payload)
         )
-      } catch (err: any) {
-        if (err.statusCode === 410 || err.statusCode === 404) {
+      } catch (err: unknown) {
+        const wpErr = err as { statusCode?: number }
+        if (wpErr && (wpErr.statusCode === 410 || wpErr.statusCode === 404)) {
           await prisma.pushSubscription.delete({ where: { id: sub.id } })
         }
       }

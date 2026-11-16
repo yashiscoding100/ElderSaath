@@ -33,7 +33,108 @@ public class AlarmScheduler {
     public static final String DEFAULT_BUTTON_ORDER = "TAKE_FIRST";
     public static final String DEFAULT_TAKE_BTN_COLOR = "#10B981";
     public static final String DEFAULT_SNOOZE_BTN_COLOR = "#334155";
+    private static final String KEY_ACTIVE_SNOOZED_IDS = "active_snoozed_med_ids";
     private static final Pattern HEX_COLOR_PATTERN = Pattern.compile("^#[0-9A-Fa-f]{6}$");
+
+    public static int getSnoozeRequestCode(String id) {
+        if (id == null || id.isEmpty()) return 250000;
+        int base = getRequestCode(id);
+        return 200000 + (base % 700000);
+    }
+
+    public static void recordActiveSnooze(Context context, String medicationId) {
+        if (context == null || medicationId == null || medicationId.trim().isEmpty()) return;
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+            Set<String> snoozed = new HashSet<>(prefs.getStringSet(KEY_ACTIVE_SNOOZED_IDS, new HashSet<String>()));
+            snoozed.add(medicationId.trim());
+            prefs.edit().putStringSet(KEY_ACTIVE_SNOOZED_IDS, snoozed).apply();
+            Log.i(TAG, "Recorded active snooze for medicationId=" + medicationId);
+        } catch (Exception e) {
+            Log.w(TAG, "Error recording active snooze: " + e.getMessage());
+        }
+    }
+
+    public static void cancelSnoozeAlarm(Context context, String medicationId) {
+        if (context == null || medicationId == null || medicationId.trim().isEmpty()) return;
+        try {
+            String cleanId = medicationId.trim();
+            AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+            if (am != null) {
+                Intent snoozeIntent = new Intent(context, LocalAlarmReceiver.class);
+                snoozeIntent.setAction(LocalAlarmReceiver.ACTION_SNOOZE_ALARM);
+                int reqCode = getSnoozeRequestCode(cleanId);
+                int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) flags |= PendingIntent.FLAG_IMMUTABLE;
+                PendingIntent pi = PendingIntent.getBroadcast(context, reqCode, snoozeIntent, flags);
+                am.cancel(pi);
+                pi.cancel();
+            }
+
+            SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+            Set<String> snoozed = new HashSet<>(prefs.getStringSet(KEY_ACTIVE_SNOOZED_IDS, new HashSet<String>()));
+            if (snoozed.remove(cleanId)) {
+                prefs.edit().putStringSet(KEY_ACTIVE_SNOOZED_IDS, snoozed).apply();
+                Log.i(TAG, "Cancelled pending snooze alarm in AlarmManager and phone memory for id: " + cleanId);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Error cancelling snooze alarm for " + medicationId, e);
+        }
+    }
+
+    public static void cancelAllSnoozes(Context context) {
+        if (context == null) return;
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+            Set<String> snoozed = prefs.getStringSet(KEY_ACTIVE_SNOOZED_IDS, null);
+            if (snoozed != null && !snoozed.isEmpty()) {
+                for (String id : snoozed) {
+                    cancelSnoozeAlarm(context, id);
+                }
+                prefs.edit().remove(KEY_ACTIVE_SNOOZED_IDS).apply();
+                Log.i(TAG, "Cancelled all active snoozes in phone memory.");
+            }
+        } catch (Exception ignored) {}
+    }
+
+    public static boolean isMedicationOrTaskActive(Context context, String id) {
+        if (context == null || id == null || id.trim().isEmpty()) return false;
+        try {
+            String saved = getSavedMedications(context);
+            if (saved == null || saved.trim().isEmpty() || "[]".equals(saved.trim())) return false;
+            JSONArray arr = new JSONArray(saved);
+            String cleanId = id.trim();
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject obj = arr.getJSONObject(i);
+                if (cleanId.equals(obj.optString("id"))) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "isMedicationOrTaskActive check warning: " + e.getMessage());
+        }
+        return false;
+    }
+
+    public static File cacheBase64Video(Context context, String medId, String videoDataUrl) {
+        if (context == null || videoDataUrl == null || !videoDataUrl.startsWith("data:")) return null;
+        try {
+            int commaIdx = videoDataUrl.indexOf(",");
+            if (commaIdx == -1) return null;
+            String base64 = videoDataUrl.substring(commaIdx + 1);
+            byte[] bytes = Base64.decode(base64, Base64.DEFAULT);
+            String safeId = (medId != null ? medId : "notice").replaceAll("[^a-zA-Z0-9._-]", "_");
+            File target = new File(context.getFilesDir(), "special_notice_video_" + safeId + ".mp4");
+            try (FileOutputStream fos = new FileOutputStream(target)) {
+                fos.write(bytes);
+                fos.flush();
+            }
+            return target;
+        } catch (Exception e) {
+            Log.w(TAG, "cacheBase64Video error: " + e.getMessage());
+            return null;
+        }
+    }
 
     public static String sanitizeButtonOrder(String val) {
         if (val != null && "SNOOZE_FIRST".equalsIgnoreCase(val.trim())) {
@@ -144,6 +245,7 @@ public class AlarmScheduler {
         cancelAll(context);
 
         if (medicationsJson == null || medicationsJson.trim().isEmpty()) {
+            cancelAllSnoozes(context);
             Log.d(TAG, "Empty medications list, all alarms cancelled.");
             return;
         }
@@ -151,8 +253,32 @@ public class AlarmScheduler {
         try {
             JSONArray arr = new JSONArray(medicationsJson);
             Set<String> scheduledIds = new HashSet<>();
+            Set<String> currentMedIds = new HashSet<>();
             AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
             SharedPreferences.Editor snEditor = prefs.edit();
+
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject obj = arr.getJSONObject(i);
+                String id = obj.optString("id");
+                if (id != null && !id.trim().isEmpty()) {
+                    currentMedIds.add(id.trim());
+                }
+            }
+
+            // Reconcile active snoozes: if a medication was snoozed and the child/caregiver deleted it, cancel its snooze alarm immediately!
+            Set<String> activeSnoozes = prefs.getStringSet(KEY_ACTIVE_SNOOZED_IDS, null);
+            if (activeSnoozes != null && !activeSnoozes.isEmpty()) {
+                Set<String> toCancel = new HashSet<>();
+                for (String sId : activeSnoozes) {
+                    if (!currentMedIds.contains(sId)) {
+                        toCancel.add(sId);
+                    }
+                }
+                for (String cId : toCancel) {
+                    Log.i(TAG, "Snoozed medication/task " + cId + " was deleted from schedule. Cancelling pending snooze alarm!");
+                    cancelSnoozeAlarm(context, cId);
+                }
+            }
 
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject obj = arr.getJSONObject(i);
@@ -274,6 +400,7 @@ public class AlarmScheduler {
      */
     public static void cancelAll(Context context) {
         if (context == null) return;
+        cancelAllSnoozes(context);
         SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
         Set<String> scheduledIds = prefs.getStringSet(KEY_SCHEDULED_IDS, null);
         if (scheduledIds != null && !scheduledIds.isEmpty()) {
@@ -481,6 +608,94 @@ public class AlarmScheduler {
         return false;
     }
 
+    public static File getSpecialNoticeVideoFile(Context context, String medId) {
+        String safeId = (medId != null ? medId : "unknown").replaceAll("[^a-zA-Z0-9._-]", "_");
+        return new File(context.getFilesDir(), "special_notice_video_" + safeId + ".mp4");
+    }
+
+    public static boolean isSpecialNoticeVideoCached(Context context, String medId, String videoUrl, String version) {
+        if (context == null || medId == null || videoUrl == null || videoUrl.trim().isEmpty()) return false;
+        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        File targetFile = getSpecialNoticeVideoFile(context, medId);
+        if (!targetFile.exists() || targetFile.length() <= 100) return false;
+        String ver = (version != null && !version.trim().isEmpty()) ? version.trim() : "1";
+        String sig = ver + "|" + videoUrl.hashCode();
+        String existingSig = prefs.getString("sn_video_sig_" + medId, "");
+        return sig.equals(existingSig);
+    }
+
+    public static boolean cacheSingleSpecialNoticeVideo(Context context, String medId, String videoUrl, String version) {
+        if (context == null || medId == null || videoUrl == null || videoUrl.trim().isEmpty()) return false;
+        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        File targetFile = getSpecialNoticeVideoFile(context, medId);
+        String ver = (version != null && !version.trim().isEmpty()) ? version.trim() : "1";
+        String sig = ver + "|" + videoUrl.hashCode();
+        String existingSig = prefs.getString("sn_video_sig_" + medId, "");
+
+        if (sig.equals(existingSig) && targetFile.exists() && targetFile.length() > 100) {
+            return true;
+        }
+
+        try {
+            String trimmed = videoUrl.trim();
+            if (trimmed.startsWith("data:")) {
+                File cached = cacheBase64Video(context, medId, trimmed);
+                if (cached != null && cached.exists() && cached.length() > 100) {
+                    if (!cached.getAbsolutePath().equals(targetFile.getAbsolutePath())) {
+                        if (targetFile.exists()) targetFile.delete();
+                        cached.renameTo(targetFile);
+                    }
+                    prefs.edit().putString("sn_video_sig_" + medId, sig).apply();
+                    Log.i(TAG, "Cached base64 special notice video for " + medId + " (" + targetFile.length() + " bytes)");
+                    return true;
+                }
+            } else {
+                String fullUrl = trimmed.startsWith("/") ? "https://eldersaath.vercel.app" + trimmed : trimmed;
+                if (fullUrl.startsWith("http")) {
+                    HttpURLConnection conn = (HttpURLConnection) new URL(fullUrl).openConnection();
+                    conn.setInstanceFollowRedirects(true);
+                    conn.setRequestProperty("x-app-alarm-secret", "ElderSaath-Hardware-Alarm-v1");
+                    conn.setConnectTimeout(15000);
+                    conn.setReadTimeout(35000);
+                    conn.connect();
+                    if (conn.getResponseCode() >= 200 && conn.getResponseCode() < 300) {
+                        File tmpFile = new File(context.getFilesDir(), targetFile.getName() + ".tmp");
+                        try (InputStream is = conn.getInputStream(); FileOutputStream fos = new FileOutputStream(tmpFile)) {
+                            byte[] buffer = new byte[8192];
+                            int read;
+                            while ((read = is.read(buffer)) != -1) {
+                                fos.write(buffer, 0, read);
+                            }
+                            fos.flush();
+                        }
+                        if (tmpFile.length() > 100) {
+                            if (targetFile.exists()) targetFile.delete();
+                            if (!tmpFile.renameTo(targetFile)) {
+                                try (InputStream fis = new java.io.FileInputStream(tmpFile);
+                                     FileOutputStream fos = new FileOutputStream(targetFile)) {
+                                    byte[] buf = new byte[8192];
+                                    int r;
+                                    while ((r = fis.read(buf)) != -1) fos.write(buf, 0, r);
+                                }
+                                tmpFile.delete();
+                            }
+                            prefs.edit().putString("sn_video_sig_" + medId, sig).apply();
+                            Log.i(TAG, "Cached special notice video for " + medId + " (" + targetFile.length() + " bytes)");
+                            conn.disconnect();
+                            return true;
+                        } else {
+                            tmpFile.delete();
+                        }
+                    }
+                    conn.disconnect();
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to cache special notice video for " + medId + ": " + e.getMessage());
+        }
+        return false;
+    }
+
     private static void cacheSpecialNoticeAudioFiles(final Context context, final JSONArray arr) {
         if (context == null || arr == null) return;
         new Thread(new Runnable() {
@@ -488,7 +703,9 @@ public class AlarmScheduler {
             public void run() {
                 try {
                     Set<String> activeAudioFilenames = new HashSet<>();
-                    Map<String, String[]> toDownload = new HashMap<>();
+                    Set<String> activeVideoFilenames = new HashSet<>();
+                    Map<String, String[]> toDownloadAudio = new HashMap<>();
+                    Map<String, String[]> toDownloadVideo = new HashMap<>();
 
                     for (int i = 0; i < arr.length(); i++) {
                         JSONObject obj = arr.optJSONObject(i);
@@ -496,29 +713,40 @@ public class AlarmScheduler {
                         String id = obj.optString("id", "");
                         boolean enabled = obj.optBoolean("specialNoticeEnabled", false);
                         String noticeType = obj.optString("specialNoticeType", "TEXT");
-                        String audioUrl = obj.optString("specialNoticeAudioUrl", "");
+                        String mediaUrl = obj.optString("specialNoticeAudioUrl", "");
                         String ver = obj.optString("specialNoticeVersion", "1");
 
-                        if (!id.isEmpty() && enabled && "VOICE".equalsIgnoreCase(noticeType) && !audioUrl.trim().isEmpty()) {
-                            File target = getSpecialNoticeAudioFile(context, id);
-                            activeAudioFilenames.add(target.getName());
-                            toDownload.put(id, new String[]{audioUrl, ver});
+                        if (!id.isEmpty() && enabled && !mediaUrl.trim().isEmpty()) {
+                            if ("VOICE".equalsIgnoreCase(noticeType)) {
+                                File target = getSpecialNoticeAudioFile(context, id);
+                                activeAudioFilenames.add(target.getName());
+                                toDownloadAudio.put(id, new String[]{mediaUrl, ver});
+                            } else if ("VIDEO".equalsIgnoreCase(noticeType)) {
+                                File target = getSpecialNoticeVideoFile(context, id);
+                                activeVideoFilenames.add(target.getName());
+                                toDownloadVideo.put(id, new String[]{mediaUrl, ver});
+                            }
                         }
                     }
 
-                    // Clean up unused/expired special notice audio files
+                    // Clean up unused/expired special notice audio and video files
                     File[] files = context.getFilesDir().listFiles();
                     if (files != null) {
                         for (File f : files) {
                             String fname = f.getName();
                             if (fname.startsWith("special_notice_") && fname.endsWith(".audio") && !activeAudioFilenames.contains(fname)) {
                                 f.delete();
+                            } else if (fname.startsWith("special_notice_video_") && fname.endsWith(".mp4") && !activeVideoFilenames.contains(fname)) {
+                                f.delete();
                             }
                         }
                     }
 
-                    for (Map.Entry<String, String[]> entry : toDownload.entrySet()) {
+                    for (Map.Entry<String, String[]> entry : toDownloadAudio.entrySet()) {
                         cacheSingleSpecialNoticeAudio(context, entry.getKey(), entry.getValue()[0], entry.getValue()[1]);
+                    }
+                    for (Map.Entry<String, String[]> entry : toDownloadVideo.entrySet()) {
+                        cacheSingleSpecialNoticeVideo(context, entry.getKey(), entry.getValue()[0], entry.getValue()[1]);
                     }
                 } catch (Exception e) {
                     Log.w(TAG, "cacheSpecialNoticeAudioFiles error: " + e.getMessage());

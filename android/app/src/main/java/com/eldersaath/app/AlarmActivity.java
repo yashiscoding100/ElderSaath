@@ -12,6 +12,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
+import android.media.Ringtone;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
@@ -29,8 +30,10 @@ import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.VideoView;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -71,6 +74,13 @@ public class AlarmActivity extends Activity {
     private TextView currentAutoSnoozeStatusView = null;
     private Runnable currentPerformSnoozeAction = null;
 
+    private VideoView specialNoticeVideoView;
+    private ProgressBar pbSpecialNoticeVideo;
+    private TextView tvSpecialNoticeVideoCaption;
+    private TextView tvSpecialNoticeVideoStatus;
+    private Button btnReplaySpecialNoticeVideo;
+    private Button btnPauseSpecialNoticeVideo;
+
     private void cancelAutoSnoozeTimer() {
         try {
             if (autoSnoozeHandler != null && autoSnoozeRunnable != null) {
@@ -86,6 +96,7 @@ public class AlarmActivity extends Activity {
                 currentInstance.cancelAutoSnoozeTimer();
                 currentInstance.stopAlarmAndSound();
                 currentInstance.stopSpecialNoticeAudio();
+                currentInstance.stopSpecialNoticeVideo();
                 currentInstance.finish();
                 currentInstance = null;
             }
@@ -107,6 +118,7 @@ public class AlarmActivity extends Activity {
                 currentInstance.cancelAutoSnoozeTimer();
                 currentInstance.stopAlarmAndSound();
                 currentInstance.stopSpecialNoticeAudio();
+                currentInstance.stopSpecialNoticeVideo();
                 currentInstance.finish();
                 currentInstance = null;
             }
@@ -158,6 +170,7 @@ public class AlarmActivity extends Activity {
         cancelAutoSnoozeTimer();
         stopAlarmAndSound();
         stopSpecialNoticeAudio();
+        stopSpecialNoticeVideo();
         setIntent(newIntent);
         handleAlarmIntent(newIntent);
     }
@@ -276,6 +289,69 @@ public class AlarmActivity extends Activity {
         final Button btnReplaySpecialNotice = findViewById(R.id.btnReplaySpecialNotice);
         final Button btnCloseSpecialNotice = findViewById(R.id.btnCloseSpecialNotice);
 
+        final LinearLayout layoutNoticeVideoBox = findViewById(R.id.layoutNoticeVideoBox);
+        specialNoticeVideoView = findViewById(R.id.videoSpecialNotice);
+        pbSpecialNoticeVideo = findViewById(R.id.pbSpecialNoticeVideo);
+        tvSpecialNoticeVideoCaption = findViewById(R.id.tvSpecialNoticeVideoCaption);
+        tvSpecialNoticeVideoStatus = findViewById(R.id.tvSpecialNoticeVideoStatus);
+        btnReplaySpecialNoticeVideo = findViewById(R.id.btnReplaySpecialNoticeVideo);
+        btnPauseSpecialNoticeVideo = findViewById(R.id.btnPauseSpecialNoticeVideo);
+
+        final boolean isAwarenessNotice = intent.getBooleanExtra("isAwarenessNotice", false);
+        if (isAwarenessNotice) {
+            playAwarenessChimeAndVibrate();
+            layoutAlarmControls.setVisibility(View.GONE);
+            layoutSpecialNotice.setVisibility(View.VISIBLE);
+            tvSpecialNoticeCounter.setText("📢 GENERAL AWARENESS NOTICE");
+            tvSpecialNoticeMed.setText(label != null && !label.isEmpty() ? label : "Important Health Announcement");
+
+            String snType = intent.getStringExtra("specialNoticeType");
+            if (snType == null || snType.isEmpty()) snType = "TEXT";
+            String snText = intent.getStringExtra("specialNoticeText");
+            if (snText == null || snText.isEmpty()) snText = body;
+            final String snMediaUrl = intent.getStringExtra("specialNoticeAudioUrl");
+
+            if ("VIDEO".equalsIgnoreCase(snType)) {
+                layoutNoticeTextBox.setVisibility(View.GONE);
+                layoutNoticeVoiceBox.setVisibility(View.GONE);
+                layoutNoticeVideoBox.setVisibility(View.VISIBLE);
+                if (snText != null && !snText.trim().isEmpty()) {
+                    tvSpecialNoticeVideoCaption.setText(snText);
+                    tvSpecialNoticeVideoCaption.setVisibility(View.VISIBLE);
+                } else {
+                    tvSpecialNoticeVideoCaption.setVisibility(View.GONE);
+                }
+                playSpecialNoticeVideo(finalMedicationId, snMediaUrl, "1", tvSpecialNoticeVideoStatus, pbSpecialNoticeVideo, btnReplaySpecialNoticeVideo, btnPauseSpecialNoticeVideo);
+            } else if ("VOICE".equalsIgnoreCase(snType)) {
+                layoutNoticeTextBox.setVisibility(View.GONE);
+                layoutNoticeVideoBox.setVisibility(View.GONE);
+                layoutNoticeVoiceBox.setVisibility(View.VISIBLE);
+                btnReplaySpecialNotice.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View btnView) {
+                        playSpecialNoticeVoice(finalMedicationId, snMediaUrl, "1", tvSpecialNoticeVoiceStatus);
+                    }
+                });
+                playSpecialNoticeVoice(finalMedicationId, snMediaUrl, "1", tvSpecialNoticeVoiceStatus);
+            } else {
+                layoutNoticeVoiceBox.setVisibility(View.GONE);
+                layoutNoticeVideoBox.setVisibility(View.GONE);
+                layoutNoticeTextBox.setVisibility(View.VISIBLE);
+                tvSpecialNoticeText.setText(snText != null ? snText : body);
+            }
+
+            btnCloseSpecialNotice.setText("✓ OK, I HAVE SEEN THIS — CLOSE");
+            btnCloseSpecialNotice.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View closeView) {
+                    stopSpecialNoticeAudio();
+                    stopSpecialNoticeVideo();
+                    finish();
+                }
+            });
+            return;
+        }
+
         TextView alertBadge = findViewById(R.id.tvAlarmBadge);
         TextView iconView = findViewById(R.id.tvAlarmIcon);
         TextView titleView = findViewById(R.id.tvAlarmTitle);
@@ -357,7 +433,8 @@ public class AlarmActivity extends Activity {
                 int flags = PendingIntent.FLAG_UPDATE_CURRENT;
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) flags |= PendingIntent.FLAG_IMMUTABLE;
 
-                int reqCode = 200000 + (int) (System.currentTimeMillis() % 100000);
+                int reqCode = AlarmScheduler.getSnoozeRequestCode(finalMedicationId);
+                AlarmScheduler.recordActiveSnooze(AlarmActivity.this, finalMedicationId);
                 PendingIntent pi = PendingIntent.getBroadcast(AlarmActivity.this, reqCode, snoozeIntent, flags);
 
                 Intent showIntent = new Intent(AlarmActivity.this, MainActivity.class);
@@ -394,6 +471,7 @@ public class AlarmActivity extends Activity {
                 alarmHandled = true;
                 cancelAutoSnoozeTimer();
                 stopAlarmAndSound();
+                AlarmScheduler.cancelSnoozeAlarm(AlarmActivity.this, finalMedicationId);
                 if ("TASK".equalsIgnoreCase(finalAlarmType)) {
                     markMedicationOrTaskTaken(AlarmActivity.this, finalMedicationId, finalElderId, "TASK");
                     Toast.makeText(AlarmActivity.this, "✓ Task completed!", Toast.LENGTH_SHORT).show();
@@ -437,7 +515,10 @@ public class AlarmActivity extends Activity {
 
                 boolean isEmergencySos = finalLabel.contains("EMERGENCY SOS") || finalLabel.contains("SOS");
                 boolean isVoice = "VOICE".equalsIgnoreCase(snType);
-                boolean hasValidPayload = isVoice ? (snAudioUrl != null && !snAudioUrl.trim().isEmpty()) : (snText != null && !snText.trim().isEmpty());
+                boolean isVideo = "VIDEO".equalsIgnoreCase(snType);
+                boolean hasValidPayload = isVideo ? (snAudioUrl != null && !snAudioUrl.trim().isEmpty())
+                    : isVoice ? (snAudioUrl != null && !snAudioUrl.trim().isEmpty())
+                    : (snText != null && !snText.trim().isEmpty());
 
                 int currentShown = AlarmScheduler.getSpecialNoticeShownCount(AlarmActivity.this, finalMedicationId, snVersion, snServerShown);
 
@@ -462,8 +543,22 @@ public class AlarmActivity extends Activity {
                     layoutAlarmControls.setVisibility(View.GONE);
                     layoutSpecialNotice.setVisibility(View.VISIBLE);
 
-                    if (isVoice) {
+                    if (isVideo) {
                         layoutNoticeTextBox.setVisibility(View.GONE);
+                        layoutNoticeVoiceBox.setVisibility(View.GONE);
+                        layoutNoticeVideoBox.setVisibility(View.VISIBLE);
+                        if (snText != null && !snText.trim().isEmpty()) {
+                            tvSpecialNoticeVideoCaption.setText(snText);
+                            tvSpecialNoticeVideoCaption.setVisibility(View.VISIBLE);
+                        } else {
+                            tvSpecialNoticeVideoCaption.setVisibility(View.GONE);
+                        }
+                        final String finalVideoUrl = snAudioUrl;
+                        final String finalVersion = snVersion;
+                        playSpecialNoticeVideo(finalMedicationId, finalVideoUrl, finalVersion, tvSpecialNoticeVideoStatus, pbSpecialNoticeVideo, btnReplaySpecialNoticeVideo, btnPauseSpecialNoticeVideo);
+                    } else if (isVoice) {
+                        layoutNoticeTextBox.setVisibility(View.GONE);
+                        layoutNoticeVideoBox.setVisibility(View.GONE);
                         layoutNoticeVoiceBox.setVisibility(View.VISIBLE);
                         final String finalAudioUrl = snAudioUrl;
                         final String finalVersion = snVersion;
@@ -476,6 +571,7 @@ public class AlarmActivity extends Activity {
                         playSpecialNoticeVoice(finalMedicationId, snAudioUrl, snVersion, tvSpecialNoticeVoiceStatus);
                     } else {
                         layoutNoticeVoiceBox.setVisibility(View.GONE);
+                        layoutNoticeVideoBox.setVisibility(View.GONE);
                         layoutNoticeTextBox.setVisibility(View.VISIBLE);
                         tvSpecialNoticeText.setText(snText);
                     }
@@ -484,6 +580,7 @@ public class AlarmActivity extends Activity {
                         @Override
                         public void onClick(View closeView) {
                             stopSpecialNoticeAudio();
+                            stopSpecialNoticeVideo();
                             Toast.makeText(AlarmActivity.this, "✓ Medicine marked as taken!", Toast.LENGTH_SHORT).show();
                             finish();
                         }
@@ -826,6 +923,188 @@ public class AlarmActivity extends Activity {
         } catch (Exception ignored) {}
     }
 
+    private void stopSpecialNoticeVideo() {
+        try {
+            if (specialNoticeVideoView != null) {
+                if (specialNoticeVideoView.isPlaying()) {
+                    specialNoticeVideoView.stopPlayback();
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void playSpecialNoticeVideo(
+        final String medId,
+        final String videoUrl,
+        final String version,
+        final TextView statusView,
+        final ProgressBar progressBar,
+        final Button btnReplay,
+        final Button btnPause
+    ) {
+        stopSpecialNoticeAudio();
+        stopSpecialNoticeVideo();
+        if (specialNoticeVideoView == null) return;
+
+        if (statusView != null) {
+            statusView.setText("⏳ Loading video notice...");
+        }
+        if (progressBar != null) {
+            progressBar.setVisibility(View.VISIBLE);
+        }
+
+        final File localFile = AlarmScheduler.getSpecialNoticeVideoFile(this, medId);
+
+        if (btnReplay != null) {
+            btnReplay.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (specialNoticeVideoView != null) {
+                        try {
+                            specialNoticeVideoView.seekTo(0);
+                            specialNoticeVideoView.start();
+                            if (btnPause != null) btnPause.setText("⏸️ PAUSE");
+                            if (statusView != null) statusView.setText("▶️ Playing video notice...");
+                        } catch (Exception e) {
+                            Log.w(TAG, "Replay video error: " + e.getMessage());
+                        }
+                    }
+                }
+            });
+        }
+
+        if (btnPause != null) {
+            btnPause.setText("⏸️ PAUSE");
+            btnPause.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (specialNoticeVideoView != null) {
+                        try {
+                            if (specialNoticeVideoView.isPlaying()) {
+                                specialNoticeVideoView.pause();
+                                btnPause.setText("▶️ RESUME");
+                                if (statusView != null) statusView.setText("⏸️ Video paused");
+                            } else {
+                                specialNoticeVideoView.start();
+                                btnPause.setText("⏸️ PAUSE");
+                                if (statusView != null) statusView.setText("▶️ Playing video notice...");
+                            }
+                        } catch (Exception e) {
+                            Log.w(TAG, "Pause/Resume video error: " + e.getMessage());
+                        }
+                    }
+                }
+            });
+        }
+
+        if (AlarmScheduler.isSpecialNoticeVideoCached(this, medId, videoUrl, version) || (localFile.exists() && localFile.length() > 500)) {
+            startVideoPlaybackFromFile(localFile, statusView, progressBar, btnPause);
+            return;
+        }
+
+        if (videoUrl != null && videoUrl.trim().startsWith("data:")) {
+            File cached = AlarmScheduler.cacheBase64Video(this, medId, videoUrl.trim());
+            if (cached != null && cached.exists() && cached.length() > 500) {
+                startVideoPlaybackFromFile(cached, statusView, progressBar, btnPause);
+                return;
+            }
+        }
+
+        if (videoUrl != null && videoUrl.trim().startsWith("http")) {
+            final String fullUrl = videoUrl.trim();
+            try {
+                Uri videoUri = Uri.parse(fullUrl);
+                specialNoticeVideoView.setVideoURI(videoUri);
+                setupVideoViewListeners(statusView, progressBar, btnPause);
+                specialNoticeVideoView.start();
+            } catch (Exception streamEx) {
+                Log.w(TAG, "Direct video streaming setup error: " + streamEx.getMessage());
+            }
+
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    AlarmScheduler.cacheSingleSpecialNoticeVideo(AlarmActivity.this, medId, fullUrl, version);
+                }
+            }).start();
+            return;
+        }
+
+        if (statusView != null) {
+            statusView.setText("⚠️ Video notice not available offline.");
+        }
+        if (progressBar != null) {
+            progressBar.setVisibility(View.GONE);
+        }
+    }
+
+    private void startVideoPlaybackFromFile(File file, final TextView statusView, final ProgressBar progressBar, final Button btnPause) {
+        try {
+            if (specialNoticeVideoView == null) return;
+            specialNoticeVideoView.setVideoPath(file.getAbsolutePath());
+            setupVideoViewListeners(statusView, progressBar, btnPause);
+            specialNoticeVideoView.start();
+        } catch (Exception e) {
+            Log.e(TAG, "startVideoPlaybackFromFile error", e);
+            if (statusView != null) statusView.setText("⚠️ Could not play video notice.");
+            if (progressBar != null) progressBar.setVisibility(View.GONE);
+        }
+    }
+
+    private void setupVideoViewListeners(final TextView statusView, final ProgressBar progressBar, final Button btnPause) {
+        if (specialNoticeVideoView == null) return;
+
+        specialNoticeVideoView.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
+            @Override
+            public void onPrepared(MediaPlayer mp) {
+                if (progressBar != null) progressBar.setVisibility(View.GONE);
+                if (statusView != null) statusView.setText("▶️ Playing video notice...");
+                if (btnPause != null) btnPause.setText("⏸️ PAUSE");
+                mp.setLooping(false);
+            }
+        });
+
+        specialNoticeVideoView.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
+            @Override
+            public void onCompletion(MediaPlayer mp) {
+                if (statusView != null) statusView.setText("✓ Video finished. Tap Replay to watch again.");
+                if (btnPause != null) btnPause.setText("🔄 REPLAY");
+            }
+        });
+
+        specialNoticeVideoView.setOnErrorListener(new MediaPlayer.OnErrorListener() {
+            @Override
+            public boolean onError(MediaPlayer mp, int what, int extra) {
+                Log.w(TAG, "VideoView error: what=" + what + ", extra=" + extra);
+                if (progressBar != null) progressBar.setVisibility(View.GONE);
+                if (statusView != null) statusView.setText("⚠️ Unable to play video notice format.");
+                return true;
+            }
+        });
+    }
+
+    private void playAwarenessChimeAndVibrate() {
+        try {
+            Uri notifUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            if (notifUri == null) notifUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+            if (notifUri != null) {
+                Ringtone r = RingtoneManager.getRingtone(getApplicationContext(), notifUri);
+                if (r != null) r.play();
+            }
+        } catch (Exception ignored) {}
+
+        try {
+            Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+            if (v != null && v.hasVibrator()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    v.vibrate(VibrationEffect.createWaveform(new long[]{0, 300, 150, 300}, -1));
+                } else {
+                    v.vibrate(new long[]{0, 300, 150, 300}, -1);
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
     /**
      * Reports incremented special notice display count asynchronously to server and clears matching pending entry.
      */
@@ -893,6 +1172,9 @@ public class AlarmActivity extends Activity {
             Log.w("ALARM_DEBUG", "Cannot mark taken: medId is null or empty");
             return;
         }
+
+        // Cancel any pending snooze alarm in AlarmManager and phone memory for this medication
+        AlarmScheduler.cancelSnoozeAlarm(context, medId);
 
         // 1. Store in local SharedPreferences pending queue so it's guaranteed to sync even when offline
         try {
@@ -1134,6 +1416,7 @@ public class AlarmActivity extends Activity {
         cancelAutoSnoozeTimer();
         stopAlarmAndSound();
         stopSpecialNoticeAudio();
+        stopSpecialNoticeVideo();
         if (currentInstance == this) {
             currentInstance = null;
         }

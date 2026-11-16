@@ -32,7 +32,7 @@ export interface UnifiedAlarmItem {
   body: string
   actionText: string
   specialNoticeEnabled?: boolean
-  specialNoticeType?: "TEXT" | "VOICE"
+  specialNoticeType?: "TEXT" | "VOICE" | "VIDEO"
   specialNoticeText?: string
   specialNoticeAudioUrl?: string
   specialNoticeMaxCount?: number
@@ -89,19 +89,19 @@ export async function getUnifiedElderAlarms(elderId: string): Promise<UnifiedAla
 
         if (m.specialNoticeEnabled) {
           base.specialNoticeEnabled = true
-          base.specialNoticeType = m.specialNoticeType === "VOICE" ? "VOICE" : "TEXT"
+          base.specialNoticeType = m.specialNoticeType === "VIDEO" ? "VIDEO" : m.specialNoticeType === "VOICE" ? "VOICE" : "TEXT"
           base.specialNoticeText = m.specialNoticeText || ""
           base.specialNoticeMaxCount = Math.max(1, m.specialNoticeMaxCount || 5)
           base.specialNoticeShownCount = Math.max(0, m.specialNoticeShownCount || 0)
           base.specialNoticeVersion = m.specialNoticeVersion || "1"
-          if (base.specialNoticeType === "VOICE") {
-            const compactAudio = resolveCompactNoticeAudioUrl(
+          if (base.specialNoticeType === "VOICE" || base.specialNoticeType === "VIDEO") {
+            const compactMedia = resolveCompactNoticeAudioUrl(
               m.id,
               m.specialNoticeAudioUrl,
               base.specialNoticeVersion,
               true
             )
-            if (compactAudio) base.specialNoticeAudioUrl = compactAudio
+            if (compactMedia) base.specialNoticeAudioUrl = compactMedia
           }
         }
 

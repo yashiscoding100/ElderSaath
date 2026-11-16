@@ -37,9 +37,21 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
         }
 
         boolean isSnooze = intent.getBooleanExtra("isSnooze", false) || ACTION_SNOOZE_ALARM.equals(action);
-        Log.e(TAG, ">>> HARDWARE ALARM TRIGGERED! (isSnooze=" + isSnooze + ") Waking device...");
-
         String medicationId = intent.getStringExtra("medicationId");
+
+        // Verify that snoozed alarm has not been deleted by child or caregiver while in snooze mode
+        if (isSnooze && medicationId != null && !medicationId.trim().isEmpty()) {
+            boolean isActive = AlarmScheduler.isMedicationOrTaskActive(context, medicationId);
+            if (!isActive) {
+                Log.w(TAG, ">>> SNOOZED ALARM CANCELLED! Medication/Task " + medicationId + " was deleted from schedule by caregiver. Suppressing ring.");
+                AlarmScheduler.cancelSnoozeAlarm(context, medicationId);
+                return;
+            }
+            // Clear from active snoozes now that it is ringing
+            AlarmScheduler.cancelSnoozeAlarm(context, medicationId);
+        }
+
+        Log.e(TAG, ">>> HARDWARE ALARM TRIGGERED! (isSnooze=" + isSnooze + ") Waking device...");
         String name = intent.getStringExtra("name");
         String dosage = intent.getStringExtra("dosage");
         String time = intent.getStringExtra("time");
