@@ -31,6 +31,7 @@ public class LocalAlarmReceiver extends BroadcastReceiver {
             String elderId = intent.getStringExtra("elderId");
             String type = intent.getStringExtra("type");
             if (medId != null && !medId.isEmpty()) {
+                AlarmScheduler.clearPendingSpecialNoticeSync(context, medId);
                 AlarmActivity.markMedicationOrTaskTaken(context, medId, elderId, type);
             }
             return;

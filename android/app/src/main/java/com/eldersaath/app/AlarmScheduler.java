@@ -295,16 +295,25 @@ public class AlarmScheduler {
                 String actionText = obj.optString("actionText", "TASK".equalsIgnoreCase(type) ? "COMPLETE TASK / STOP ALARM" : "TAKE MEDICINE / STOP ALARM");
 
                 // Reconcile per-medication special notice counter in phone memory
-                if (id != null && !id.isEmpty() && obj.optBoolean("specialNoticeEnabled", false)) {
-                    String ver = obj.optString("specialNoticeVersion", "1");
-                    int serverShown = Math.max(0, obj.optInt("specialNoticeShownCount", 0));
-                    String storedVer = prefs.getString("sn_ver_" + id, null);
-                    if (storedVer == null || !storedVer.equals(ver)) {
-                        snEditor.putString("sn_ver_" + id, ver);
-                        snEditor.putInt("sn_count_" + id, serverShown);
+                if (id != null && !id.isEmpty()) {
+                    boolean snEnabled = obj.optBoolean("specialNoticeEnabled", false);
+                    if (snEnabled) {
+                        String ver = obj.optString("specialNoticeVersion", "1");
+                        int serverShown = Math.max(0, obj.optInt("specialNoticeShownCount", 0));
+                        String storedVer = prefs.getString("sn_ver_" + id, null);
+                        if (storedVer == null || !storedVer.equals(ver) || serverShown == 0) {
+                            snEditor.putString("sn_ver_" + id, ver);
+                            snEditor.putInt("sn_count_" + id, serverShown);
+                            // Purge any stale pending sync records for this medication when reset to 0 or version changed
+                            clearPendingSpecialNoticeSync(context, id);
+                        } else {
+                            int localCount = prefs.getInt("sn_count_" + id, 0);
+                            snEditor.putInt("sn_count_" + id, Math.max(localCount, serverShown));
+                        }
                     } else {
-                        int localCount = prefs.getInt("sn_count_" + id, 0);
-                        snEditor.putInt("sn_count_" + id, Math.max(localCount, serverShown));
+                        // Notice disabled: clear any pending records and reset local count
+                        snEditor.putInt("sn_count_" + id, 0);
+                        clearPendingSpecialNoticeSync(context, id);
                     }
                 }
 
@@ -516,6 +525,36 @@ public class AlarmScheduler {
 
         Log.i(TAG, "Recorded special notice shown in phone memory [" + medId + ", ver=" + ver + ", count=" + nextCount + "]");
         return nextCount;
+    }
+
+    /**
+     * Purges any pending special notice sync entries for a specific medication from phone memory.
+     * Prevents snoozed or auto-snoozed alarms from ever falsely syncing as seen.
+     */
+    public static void clearPendingSpecialNoticeSync(Context context, String medId) {
+        if (context == null || medId == null || medId.trim().isEmpty()) return;
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+            Set<String> pending = prefs.getStringSet("pending_special_notice_sync", null);
+            if (pending != null && !pending.isEmpty()) {
+                String prefix = medId.trim() + "|";
+                Set<String> cleaned = new HashSet<>();
+                boolean modified = false;
+                for (String entry : pending) {
+                    if (entry.startsWith(prefix)) {
+                        modified = true;
+                    } else {
+                        cleaned.add(entry);
+                    }
+                }
+                if (modified) {
+                    prefs.edit().putStringSet("pending_special_notice_sync", cleaned).apply();
+                    Log.i(TAG, "Purged pending special notice sync for medId=" + medId);
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "clearPendingSpecialNoticeSync warning: " + e.getMessage());
+        }
     }
 
     public static File getSpecialNoticeAudioFile(Context context, String medId) {

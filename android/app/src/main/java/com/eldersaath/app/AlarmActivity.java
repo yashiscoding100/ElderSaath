@@ -60,6 +60,7 @@ public class AlarmActivity extends Activity {
     private Handler autoSnoozeHandler;
     private Runnable autoSnoozeRunnable;
     private volatile boolean alarmHandled = false;
+    private volatile boolean isSnoozing = false;
 
     private long currentTriggerNonce = 0L;
     private long intentGeneration = 0L;
@@ -93,6 +94,7 @@ public class AlarmActivity extends Activity {
         try {
             if (currentInstance != null) {
                 currentInstance.alarmHandled = true;
+                currentInstance.isSnoozing = true;
                 currentInstance.cancelAutoSnoozeTimer();
                 currentInstance.stopAlarmAndSound();
                 currentInstance.stopSpecialNoticeAudio();
@@ -115,6 +117,7 @@ public class AlarmActivity extends Activity {
         try {
             if (currentInstance != null) {
                 currentInstance.alarmHandled = true;
+                currentInstance.isSnoozing = true;
                 currentInstance.cancelAutoSnoozeTimer();
                 currentInstance.stopAlarmAndSound();
                 currentInstance.stopSpecialNoticeAudio();
@@ -405,10 +408,24 @@ public class AlarmActivity extends Activity {
         final Runnable performSnoozeAction = new Runnable() {
             @Override
             public void run() {
-                if (alarmHandled) return;
+                if (alarmHandled || isSnoozing) return;
+                isSnoozing = true;
                 alarmHandled = true;
                 cancelAutoSnoozeTimer();
                 stopAlarmAndSound();
+
+                // Explicitly purge any pending notice sync records for this medication so snoozing NEVER counts as seen
+                AlarmScheduler.clearPendingSpecialNoticeSync(AlarmActivity.this, finalMedicationId);
+
+                // Disable stop button immediately to prevent any accidental click during transition
+                try {
+                    Button stopBtn = findViewById(R.id.btnStopAlarm);
+                    if (stopBtn != null) {
+                        stopBtn.setEnabled(false);
+                        stopBtn.setClickable(false);
+                        stopBtn.setOnClickListener(null);
+                    }
+                } catch (Exception ignored) {}
 
                 boolean triggeredAutomatically = "AUTO".equals(autoSnoozeStatusView.getTag());
                 int activeSnoozeMinutes = Math.max(1, currentSnoozeDuration);
@@ -467,7 +484,7 @@ public class AlarmActivity extends Activity {
         View.OnClickListener stopClickListener = new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (alarmHandled) return;
+                if (alarmHandled || isSnoozing) return;
                 alarmHandled = true;
                 cancelAutoSnoozeTimer();
                 stopAlarmAndSound();
@@ -522,7 +539,7 @@ public class AlarmActivity extends Activity {
 
                 int currentShown = AlarmScheduler.getSpecialNoticeShownCount(AlarmActivity.this, finalMedicationId, snVersion, snServerShown);
 
-                if (!isEmergencySos && snEnabled && hasValidPayload && currentShown < snMaxCount) {
+                if (!isSnoozing && !isEmergencySos && snEnabled && hasValidPayload && currentShown < snMaxCount) {
                     int newCount = AlarmScheduler.incrementSpecialNoticeShownCount(AlarmActivity.this, finalMedicationId, snVersion, currentShown);
                     syncSpecialNoticeShownToServer(AlarmActivity.this, finalMedicationId, finalElderId, snVersion, newCount);
 
@@ -597,6 +614,8 @@ public class AlarmActivity extends Activity {
         View.OnClickListener snoozeClickListener = new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                if (alarmHandled || isSnoozing) return;
+                isSnoozing = true;
                 autoSnoozeStatusView.setTag("MANUAL");
                 performSnoozeAction.run();
             }
@@ -651,9 +670,10 @@ public class AlarmActivity extends Activity {
         autoSnoozeRunnable = new Runnable() {
             @Override
             public void run() {
-                if (alarmHandled || isFinishing() || isDestroyed()) return;
+                if (alarmHandled || isSnoozing || isFinishing() || isDestroyed()) return;
                 long remainingMs = deadlineElapsed - SystemClock.elapsedRealtime();
                 if (remainingMs <= 0) {
+                    isSnoozing = true;
                     Log.i(TAG, "Auto-snooze countdown reached 0 for account " + currentElderId + " - auto-snoozing for " + currentSnoozeDuration + " mins.");
                     currentAutoSnoozeStatusView.setTag("AUTO");
                     if (currentPerformSnoozeAction != null) {
@@ -1413,6 +1433,7 @@ public class AlarmActivity extends Activity {
     @Override
     protected void onDestroy() {
         alarmHandled = true;
+        isSnoozing = true;
         cancelAutoSnoozeTimer();
         stopAlarmAndSound();
         stopSpecialNoticeAudio();

@@ -114,16 +114,19 @@ export function MedicationAlarmSync() {
         try {
           const snRes = await AlarmSyncPlugin.getPendingSpecialNoticeSync()
           const snItems = snRes?.items || []
-          if (snItems.length > 0) {
+          const validItems = snItems.filter(
+            (it) => it && it.medicationId && Number.isFinite(Number(it.shownCount)) && Number(it.shownCount) > 0
+          )
+          if (validItems.length > 0) {
             const syncRes = await fetch("/api/medications/notice-shown", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                items: snItems.map((it) => ({
+                items: validItems.map((it) => ({
                   medicationId: it.medicationId,
                   elderId: userId,
                   version: it.version,
-                  shownCount: it.shownCount
+                  shownCount: Number(it.shownCount)
                 }))
               })
             }).catch(() => null)
@@ -132,6 +135,11 @@ export function MedicationAlarmSync() {
                 entries: snItems.map((it) => it.entry)
               }).catch(() => {})
             }
+          } else if (snItems.length > 0 && typeof AlarmSyncPlugin.clearPendingSpecialNoticeSync === "function") {
+            // Immediately purge any stale or non-positive pending entries
+            await AlarmSyncPlugin.clearPendingSpecialNoticeSync({
+              entries: snItems.map((it) => it.entry)
+            }).catch(() => {})
           }
         } catch (snErr) {
           console.warn("[MedicationAlarmSync] Flush pending special notice sync error:", snErr)

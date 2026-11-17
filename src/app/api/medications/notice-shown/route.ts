@@ -50,6 +50,14 @@ export async function POST(req: Request) {
       if (session?.user?.role === "ELDER" && med.elderId !== session.user.id) continue
       if (!session && itemElderId && med.elderId !== itemElderId) continue
 
+      const maxCount = Math.max(1, med.specialNoticeMaxCount || 5)
+      
+      // If special notice is not enabled, reject count increment
+      if (!med.specialNoticeEnabled) {
+        results.push({ medicationId, skipped: "notice_disabled", currentShownCount: med.specialNoticeShownCount })
+        continue
+      }
+
       // Ignore stale sync records from an older special-notice version if child already reset/edited it
       if (
         med.specialNoticeVersion &&
@@ -60,14 +68,24 @@ export async function POST(req: Request) {
         continue
       }
 
-      const maxCount = Math.max(1, med.specialNoticeMaxCount || 5)
-      const candidate =
-        reportedCount !== null && Number.isFinite(reportedCount)
-          ? Math.max(med.specialNoticeShownCount, Math.round(reportedCount))
-          : med.specialNoticeShownCount + 1
-      const nextCount = Math.min(maxCount, Math.max(0, candidate))
+      // Explicit validation: reportedCount MUST be a valid, positive integer strictly greater than current shown count
+      // Snoozing or auto-snoozing never reports a valid higher count, preventing any false +1
+      if (
+        reportedCount === null ||
+        !Number.isFinite(reportedCount) ||
+        reportedCount <= med.specialNoticeShownCount
+      ) {
+        results.push({
+          medicationId,
+          skipped: "count_not_greater",
+          currentShownCount: med.specialNoticeShownCount
+        })
+        continue
+      }
 
-      if (nextCount !== med.specialNoticeShownCount) {
+      const nextCount = Math.min(maxCount, Math.round(reportedCount))
+
+      if (nextCount > med.specialNoticeShownCount) {
         await prisma.medication.update({
           where: { id: medicationId },
           data: { specialNoticeShownCount: nextCount }
